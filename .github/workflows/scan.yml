@@ -1,0 +1,109 @@
+name: CI Pipeline with SuccessWithIssues
+ 
+on:
+  push:
+    branches:
+      - main  # Triggers workflow on push to the main branch
+  pull_request:  # Also runs on pull request events
+ 
+jobs:
+  # 1. Lint Check - Runs a linter to check for code formatting issues
+  lint_check:
+    name: Run Linting (Continue on Error)
+    runs-on: self-hosted  # Using self-hosted macOS runner
+    continue-on-error: true  # Allows the job to fail without stopping the pipeline
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3  # Fetches the latest code from the repo
+ 
+      - name: Execute Linter
+        run: |
+          echo "Running lint checks..." > lint-report.txt
+          echo "Linting completed with warnings and errors!" >> lint-report.txt
+          exit 1  # Simulating failure for testing continue-on-error behavior
+ 
+      - name: Upload Linter Report
+        uses: actions/upload-artifact@v3  # Uploads linting results as an artifact
+        with:
+          name: Lint-Report
+          path: lint-report.txt
+ 
+  # 2. Unit Tests - Runs even if linting fails, ensuring tests are executed
+  unit_tests:
+    name: Execute Unit Tests (Always Runs)
+    runs-on: self-hosted
+    needs: lint_check  # Depends on linting job
+    if: always()  # Ensures this job runs even if linting fails
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+ 
+      - name: Run Unit Tests
+        run: |
+          echo "Executing unit tests..." > unit-test-report.txt
+          echo "All tests passed successfully!" >> unit-test-report.txt
+          exit 0  # Simulating successful tests
+ 
+      - name: Upload Unit Test Report
+        uses: actions/upload-artifact@v3  # Uploads test results as an artifact
+        with:
+          name: Unit-Test-Report
+          path: unit-test-report.txt
+ 
+  # 3. Build Job - Builds the application, even if tests or linting fail
+  build_application:
+    name: Build and Package Application (Manual Error Handling)
+    runs-on: self-hosted
+    needs: unit_tests  # Waits for unit tests to complete before starting
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+ 
+      - name: Build Application
+        run: |
+          echo "Building the application..." > build-log.txt
+          set +e  # Disables automatic failure handling
+          make build || BUILD_STATUS=$?  # Captures exit status of the build process
+          echo "Build exited with status: $BUILD_STATUS" >> build-log.txt
+          exit 0  # Ensures pipeline continues regardless of build failure
+ 
+      - name: Upload Build Logs
+        uses: actions/upload-artifact@v3  # Uploads build logs for debugging
+        with:
+          name: Build-Logs
+          path: build-log.txt
+ 
+  # 4. Final Evaluation Job - Determines if the pipeline completed with issues
+  pipeline_evaluation:
+    name: Evaluate CI Pipeline Results
+    runs-on: self-hosted
+    needs: [lint_check, unit_tests, build_application]  # Waits for all jobs to complete
+    if: success() || failure()  #  Runs regardless of previous job outcomes
+    steps:
+      - name: Generate Pipeline Summary
+        run: |
+          echo "Evaluating previous job statuses..." > pipeline-summary.txt
+          
+          # Capture outcomes of previous jobs
+          LINT_STATUS="${{ needs.lint_check.result }}"
+          TEST_STATUS="${{ needs.unit_tests.result }}"
+          BUILD_STATUS="${{ needs.build_application.result }}"
+ 
+          echo "Linting Status: $LINT_STATUS" >> pipeline-summary.txt
+          echo "Unit Tests Status: $TEST_STATUS" >> pipeline-summary.txt
+          echo "Build Status: $BUILD_STATUS" >> pipeline-summary.txt
+ 
+          # Check if any job failed and mark pipeline as "SuccessWithIssues"
+          if [[ "$LINT_STATUS" == "failure" || "$TEST_STATUS" == "failure" || "$BUILD_STATUS" == "failure" ]]; then
+            echo " CI Pipeline completed with issues!" >> pipeline-summary.txt
+            exit 0  # Marks pipeline as successful but with warnings
+          else
+            echo "CI Pipeline completed successfully!" >> pipeline-summary.txt
+          fi
+ 
+      - name: Upload Pipeline Summary Report
+        uses: actions/upload-artifact@v3  # Uploads final summary for visibility
+        with:
+          name: Pipeline-Summary
+          path: pipeline-summary.txt
+ 
