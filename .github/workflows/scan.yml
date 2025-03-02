@@ -11,7 +11,7 @@ jobs:
   lint_check:
     name: Run Linting (Continue on Error)
     runs-on: self-hosted 
-    continue-on-error: true  
+    # continue-on-error: true  
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3  
