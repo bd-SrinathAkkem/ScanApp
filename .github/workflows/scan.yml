@@ -3,18 +3,18 @@ name: CI Pipeline with SuccessWithIssues
 on:
   push:
     branches:
-      - main  # Triggers workflow on push to the main branch
-  pull_request:  # Also runs on pull request events
+      - main 
+  pull_request: 
  
 jobs:
   # 1. Lint Check - Runs a linter to check for code formatting issues
   lint_check:
     name: Run Linting (Continue on Error)
-    runs-on: self-hosted  # Using self-hosted macOS runner
-    continue-on-error: true  # Allows the job to fail without stopping the pipeline
+    runs-on: self-hosted 
+    continue-on-error: true  
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3  # Fetches the latest code from the repo
+        uses: actions/checkout@v3  
  
       - name: Execute Linter
         run: |
@@ -23,7 +23,7 @@ jobs:
           exit 1  # Simulating failure for testing continue-on-error behavior
  
       - name: Upload Linter Report
-        uses: actions/upload-artifact@v3  # Uploads linting results as an artifact
+        uses: actions/upload-artifact@v4 
         with:
           name: Lint-Report
           path: lint-report.txt
@@ -32,8 +32,8 @@ jobs:
   unit_tests:
     name: Execute Unit Tests (Always Runs)
     runs-on: self-hosted
-    needs: lint_check  # Depends on linting job
-    if: always()  # Ensures this job runs even if linting fails
+    needs: lint_check 
+    if: always()  
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
@@ -45,7 +45,7 @@ jobs:
           exit 0  # Simulating successful tests
  
       - name: Upload Unit Test Report
-        uses: actions/upload-artifact@v3  # Uploads test results as an artifact
+        uses: actions/upload-artifact@v4 
         with:
           name: Unit-Test-Report
           path: unit-test-report.txt
@@ -54,7 +54,7 @@ jobs:
   build_application:
     name: Build and Package Application (Manual Error Handling)
     runs-on: self-hosted
-    needs: unit_tests  # Waits for unit tests to complete before starting
+    needs: unit_tests  
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
@@ -68,7 +68,7 @@ jobs:
           exit 0  # Ensures pipeline continues regardless of build failure
  
       - name: Upload Build Logs
-        uses: actions/upload-artifact@v3  # Uploads build logs for debugging
+        uses: actions/upload-artifact@v4 
         with:
           name: Build-Logs
           path: build-log.txt
@@ -77,8 +77,8 @@ jobs:
   pipeline_evaluation:
     name: Evaluate CI Pipeline Results
     runs-on: self-hosted
-    needs: [lint_check, unit_tests, build_application]  # Waits for all jobs to complete
-    if: success() || failure()  #  Runs regardless of previous job outcomes
+    needs: [lint_check, unit_tests, build_application]  
+    if: success() || failure()  
     steps:
       - name: Generate Pipeline Summary
         run: |
@@ -102,7 +102,7 @@ jobs:
           fi
  
       - name: Upload Pipeline Summary Report
-        uses: actions/upload-artifact@v3  # Uploads final summary for visibility
+        uses: actions/upload-artifact@v4
         with:
           name: Pipeline-Summary
           path: pipeline-summary.txt
