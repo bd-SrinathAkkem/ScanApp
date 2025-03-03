@@ -15,15 +15,15 @@ jobs:
 
       - name: Run Black Duck Scan
         id: blackduck_scan
+        continue-on-error: true
+        with:
+          blackducksca_url: ${{ vars.BLACKDUCK_URL }}
+          blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
         run: |
           blackduck-inc/black-duck-security-scan@v2.0.0
           exitcode="$?"
           echo "exitcode=$exitcode" >> $GITHUB_OUTPUT
           exit "$exitcode"
-        continue-on-error: true
-        with:
-          blackducksca_url: ${{ vars.BLACKDUCK_URL }}
-          blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
 
       - name: Evaluate Scan Exit Code
         run: |
