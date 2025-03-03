@@ -1,299 +1,45 @@
-# name: CI Pipeline with SuccessWithIssues
- 
-# on:
-#   push:
-#     branches:
-#       - main 
-#   pull_request: 
- 
-# jobs:
-#   # 1. Lint Check - Runs a linter to check for code formatting issues
-#   lint_check:
-#     name: Run Linting (Continue on Error)
-#     runs-on: self-hosted 
-#     # continue-on-error: true  
-#     steps:
-#       - name: Checkout Repository
-#         uses: actions/checkout@v3  
- 
-#       - name: Execute Linter
-#         run: |
-#           echo "Running lint checks..." > lint-report.txt
-#           echo "Linting completed with warnings and errors!" >> lint-report.txt
-#           exit 1  # Simulating failure for testing continue-on-error behavior
- 
-#       - name: Upload Linter Report
-#         uses: actions/upload-artifact@v4 
-#         with:
-#           name: Lint-Report
-#           path: lint-report.txt
- 
-#   # 2. Unit Tests - Runs even if linting fails, ensuring tests are executed
-#   unit_tests:
-#     name: Execute Unit Tests (Always Runs)
-#     runs-on: self-hosted
-#     needs: lint_check 
-#     if: always()  
-#     steps:
-#       - name: Checkout Repository
-#         uses: actions/checkout@v3
- 
-#       - name: Run Unit Tests
-#         run: |
-#           echo "Executing unit tests..." > unit-test-report.txt
-#           echo "All tests passed successfully!" >> unit-test-report.txt
-#           exit 0  # Simulating successful tests
- 
-#       - name: Upload Unit Test Report
-#         uses: actions/upload-artifact@v4 
-#         with:
-#           name: Unit-Test-Report
-#           path: unit-test-report.txt
- 
-#   # 3. Build Job - Builds the application, even if tests or linting fail
-#   build_application:
-#     name: Build and Package Application (Manual Error Handling)
-#     runs-on: self-hosted
-#     needs: unit_tests  
-#     steps:
-#       - name: Checkout Repository
-#         uses: actions/checkout@v3
- 
-#       - name: Build Application
-#         run: |
-#           echo "Building the application..." > build-log.txt
-#           set +e  # Disables automatic failure handling
-#           make build || BUILD_STATUS=$?  # Captures exit status of the build process
-#           echo "Build exited with status: $BUILD_STATUS" >> build-log.txt
-#           exit 0  # Ensures pipeline continues regardless of build failure
- 
-#       - name: Upload Build Logs
-#         uses: actions/upload-artifact@v4 
-#         with:
-#           name: Build-Logs
-#           path: build-log.txt
- 
-#   # 4. Final Evaluation Job - Determines if the pipeline completed with issues
-#   pipeline_evaluation:
-#     name: Evaluate CI Pipeline Results
-#     runs-on: self-hosted
-#     needs: [lint_check, unit_tests, build_application]  
-#     if: success() || failure()  
-#     steps:
-#       - name: Generate Pipeline Summary
-#         run: |
-#           echo "Evaluating previous job statuses..." > pipeline-summary.txt
-          
-#           # Capture outcomes of previous jobs
-#           LINT_STATUS="${{ needs.lint_check.result }}"
-#           TEST_STATUS="${{ needs.unit_tests.result }}"
-#           BUILD_STATUS="${{ needs.build_application.result }}"
- 
-#           echo "Linting Status: $LINT_STATUS" >> pipeline-summary.txt
-#           echo "Unit Tests Status: $TEST_STATUS" >> pipeline-summary.txt
-#           echo "Build Status: $BUILD_STATUS" >> pipeline-summary.txt
- 
-#           # Check if any job failed and mark pipeline as "SuccessWithIssues"
-#           if [[ "$LINT_STATUS" == "failure" || "$TEST_STATUS" == "failure" || "$BUILD_STATUS" == "failure" ]]; then
-#             echo " CI Pipeline completed with issues!" >> pipeline-summary.txt
-#             exit 0  # Marks pipeline as successful but with warnings
-#           else
-#             echo "CI Pipeline completed successfully!" >> pipeline-summary.txt
-#           fi
- 
-#       - name: Upload Pipeline Summary Report
-#         uses: actions/upload-artifact@v4
-#         with:
-#           name: Pipeline-Summary
-#           path: pipeline-summary.txt
- 
-name: CI Pipeline with Real Error Analysis (Artifact v4)
- 
+name: CI-BlackDuck-SCA
 on:
   push:
-    branches:
-      - main
+    branches: [ main, master, develop, stage, release ]
   pull_request:
- 
+    branches: [ main, master, develop, stage, release ]
+  workflow_dispatch:
+    
 jobs:
-  setup_environment:
-    name: Setup Node.js and Install Dependencies
-    runs-on: self-hosted
+  build:
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
+      - name: Checkout Source
         uses: actions/checkout@v3
  
-      # Setup Node.js (latest LTS version)
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Run Black Duck Scan
+        id: blackduck_scan
+        uses: blackduck-inc/black-duck-security-scan@v2.0.0
+        continue-on-error: true
         with:
-          node-version: 'lts/*'
-          cache: 'npm'
+          blackducksca_url: ${{ vars.BLACKDUCK_URL }}
+          blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
  
-      # Install dependencies using npm ci for reproducibility
-      - name: Install Dependencies
-        run: npm ci
- 
-      # Upload node_modules as an artifact to be used in later jobs
-      - name: Upload Node Modules (Artifact v4)
-        uses: actions/upload-artifact@v4
-        with:
-          name: Node-Modules
-          path: node_modules
-          retention-days: 1  # Only needed temporarily
- 
-  lint_check:
-    name: Run Linting (Capture Real Errors)
-    runs-on: self-hosted
-    needs: setup_environment
-    continue-on-error: true  # Ensures pipeline continues even if linting fails
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
- 
-      # Download the node_modules artifact for faster execution
-      - name: Download Node Modules
-        uses: actions/download-artifact@v4
-        with:
-          name: Node-Modules
-          path: node_modules
- 
-      # Run ESLint to check for coding standard violations
-      - name: Run ESLint
+      - name: Evaluate Scan Exit Code
         run: |
-          npx eslint src/ > lint-report.txt 2> lint-errors.txt || true
-          if [ -s lint-errors.txt ]; then
-            echo "Linting found issues."
+          echo "EXIT_CODE=${{ steps.blackduck_scan.outcome }}" >> $GITHUB_ENV
+          if [ "${{ steps.blackduck_scan.outcome }}" -eq 8 ]; then
+            echo "BLACKDUCK_STATUS=success" >> $GITHUB_ENV
+          elif [ "${{ steps.blackduck_scan.outcome }}" -ne 0 ]; then
+            echo "BLACKDUCK_STATUS=failure" >> $GITHUB_ENV
+            exit 1
           else
-            echo "No linting issues found." > lint-errors.txt
+            echo "BLACKDUCK_STATUS=success" >> $GITHUB_ENV
           fi
  
-      # Upload linting errors for later review
-      - name: Upload Linter Reports (Artifact v4)
+      - name: Upload Black Duck Scan Report
         uses: actions/upload-artifact@v4
         with:
-          name: Lint-Reports
-          path: |
-            lint-report.txt
-            lint-errors.txt
-          retention-days: 7
+          name: blackduck-report
+          path: scan_output.log
  
-  unit_tests:
-    name: Run Unit Tests (Capture Real Errors)
-    runs-on: self-hosted
-    needs: [setup_environment, lint_check]
-    if: always()  # Ensures tests run even if linting fails
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
+      - name: Final Pipeline Status
+        if: env.BLACKDUCK_STATUS == 'failure'
+        run: exit 1
  
-      - name: Download Node Modules
-        uses: actions/download-artifact@v4
-        with:
-          name: Node-Modules
-          path: node_modules
- 
-      # Run Jest tests and capture failures
-      - name: Run Jest Tests
-        run: |
-          npx jest --ci > unit-test-report.txt 2> test-errors.txt || true
-          if [ -s test-errors.txt ]; then
-            echo "Test failures detected."
-          else
-            echo "All tests passed successfully." > test-errors.txt
-          fi
- 
-      # Upload unit test reports for later analysis
-      - name: Upload Unit Test Reports (Artifact v4)
-        uses: actions/upload-artifact@v4
-        with:
-          name: Unit-Test-Reports
-          path: |
-            unit-test-report.txt
-            test-errors.txt
-          retention-days: 7
- 
-  build_application:
-    name: Build Application (Capture Real Errors)
-    runs-on: self-hosted
-    needs: [setup_environment, unit_tests]
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
- 
-      - name: Download Node Modules
-        uses: actions/download-artifact@v4
-        with:
-          name: Node-Modules
-          path: node_modules
- 
-      # Run TypeScript compiler to check for build errors
-      - name: Build TypeScript Project
-        run: |
-          npx tsc > build-log.txt 2> build-errors.txt || true
-          if [ -s build-errors.txt ]; then
-            echo "Build failed due to TypeScript errors."
-          else
-            echo "Build completed successfully." > build-errors.txt
-          fi
- 
-      # Upload build logs for later review
-      - name: Upload Build Logs (Artifact v4)
-        uses: actions/upload-artifact@v4
-        with:
-          name: Build-Logs
-          path: |
-            build-log.txt
-            build-errors.txt
-          retention-days: 7
- 
-  pipeline_evaluation:
-    name: Evaluate CI Pipeline Results
-    runs-on: self-hosted
-    needs: [lint_check, unit_tests, build_application]
-    if: success() || failure()  # Runs even if previous jobs fail
-    steps:
-      # Downloading all artifacts for final analysis
-      - name: Download All Artifacts (Artifact v4)
-        uses: actions/download-artifact@v4
-        with:
-          path: ./artifacts  
- 
-      # Generate a pipeline summary that aggregates errors from all jobs
-      - name: Generate Final Pipeline Summary
-        run: |
-          echo "Evaluating CI pipeline results..." > pipeline-summary.txt
-          
-          # Capturing job statuses
-          LINT_STATUS="${{ needs.lint_check.result }}"
-          TEST_STATUS="${{ needs.unit_tests.result }}"
-          BUILD_STATUS="${{ needs.build_application.result }}"
- 
-          echo "Linting Status: $LINT_STATUS" >> pipeline-summary.txt
-          echo "Unit Tests Status: $TEST_STATUS" >> pipeline-summary.txt
-          echo "Build Status: $BUILD_STATUS" >> pipeline-summary.txt
- 
-          # Aggregating errors from all reports
-          echo "" >> pipeline-summary.txt
-          echo "========== ERROR REPORT ==========" >> pipeline-summary.txt
-          echo "Lint Errors:" >> pipeline-summary.txt
-          cat ./artifacts/Lint-Reports/lint-errors.txt >> pipeline-summary.txt || echo "No lint errors found." >> pipeline-summary.txt
- 
-          echo "" >> pipeline-summary.txt
-          echo "Test Errors:" >> pipeline-summary.txt
-          cat ./artifacts/Unit-Test-Reports/test-errors.txt >> pipeline-summary.txt || echo "All tests passed." >> pipeline-summary.txt
- 
-          echo "" >> pipeline-summary.txt
-          echo "Build Errors:" >> pipeline-summary.txt
-          cat ./artifacts/Build-Logs/build-errors.txt >> pipeline-summary.txt || echo "No build errors found." >> pipeline-summary.txt
- 
-          echo "" >> pipeline-summary.txt
-          echo "========== END OF REPORT ==========" >> pipeline-summary.txt
- 
-      # Upload the final pipeline summary
-      - name: Upload Final Pipeline Summary (Artifact v4)
-        uses: actions/upload-artifact@v4
-        with:
-          name: Pipeline-Summary
-          path: pipeline-summary.txt
-          retention-days: 7
