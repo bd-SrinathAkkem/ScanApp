@@ -19,8 +19,8 @@ jobs:
         with:
           blackducksca_url: ${{ vars.BLACKDUCK_URL }}
           blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
+        uses: blackduck-inc/black-duck-security-scan@v2.0.0
         run: |
-          blackduck-inc/black-duck-security-scan@v2.0.0
           exitcode="$?"
           echo "exitcode=$exitcode" >> $GITHUB_OUTPUT
           exit "$exitcode"
