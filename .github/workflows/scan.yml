@@ -15,7 +15,11 @@ jobs:
 
       - name: Run Black Duck Scan
         id: blackduck_scan
-        uses: blackduck-inc/black-duck-security-scan@v2.0.0
+        run: |
+          blackduck-inc/black-duck-security-scan@v2.0.0
+          exitcode="$?"
+          echo "exitcode=$exitcode" >> $GITHUB_OUTPUT
+          exit "$exitcode"
         continue-on-error: true
         with:
           blackducksca_url: ${{ vars.BLACKDUCK_URL }}
@@ -23,7 +27,7 @@ jobs:
 
       - name: Evaluate Scan Exit Code
         run: |
-          echo "EXIT_CODE=${{ steps.blackduck_scan.outputs.exitcode || 0 }}" >> $GITHUB_ENV
+          echo "EXIT_CODE=${{ steps.blackduck_scan.outputs.exitcode }}" >> $GITHUB_ENV
           if [ "${{ steps.blackduck_scan.outputs.exitcode }}" -eq 8 ]; then
             echo "BLACKDUCK_STATUS=success" >> $GITHUB_ENV
           elif [ "${{ steps.blackduck_scan.outputs.exitcode }}" -ne 0 ]; then
@@ -31,6 +35,7 @@ jobs:
             exit 1
           else
             echo "BLACKDUCK_STATUS=success" >> $GITHUB_ENV
+          fi
 
       - name: Upload Black Duck Scan Report
         uses: actions/upload-artifact@v4
