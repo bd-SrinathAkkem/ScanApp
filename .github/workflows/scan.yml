@@ -16,21 +16,20 @@ jobs:
       - name: Run Black Duck Security Scan
         id: blackduck_scan
         uses: blackduck-inc/black-duck-security-scan@v2.0.0
+        continue-on-error: true
         with:
           blackducksca_url: ${{ secrets.BLACKDUCK_URL }}
           blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
-        continue-on-error: true
- 
-      - name: Handle Scan Result
-        run: |
-          EXIT_CODE=${{ steps.blackduck_scan.outputs.exitCode }}
-          echo "Black Duck Scan exited with code $EXIT_CODE"
-          if [ "$EXIT_CODE" -eq 0 ]; then
-            echo "Scan completed successfully."
-          elif [ "$EXIT_CODE" -eq 3 ]; then
-            echo "Policy violations detected."
-            exit 3
-          else
-            echo "Scan failed with exit code $EXIT_CODE."
-            exit $EXIT_CODE
-          fi
+          run: |
+            EXIT_CODE=${{ steps.blackduck_scan.outputs.exitCode }}
+            my_Exit = $?
+            echo "Black Duck Scan exited with code $EXIT_CODE"
+            if [ "$EXIT_CODE" -eq 0 ]; then
+              echo "Scan completed successfully."
+            elif [ "$EXIT_CODE" -eq 3 ]; then
+              echo "Policy violations detected."
+              exit 3
+            else
+              echo "Scan failed with exit code $EXIT_CODE. $my_Exit"
+              exit $EXIT_CODE
+            fi
