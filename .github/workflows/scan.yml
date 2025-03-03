@@ -13,7 +13,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '16'  # Adjust based on package requirements
+          node-version: '20.9.0'
  
       - name: Run Black Duck SCA PR Scan with npx
         id: blackduck_scan
