@@ -7,12 +7,28 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: [ ubuntu-latest ]
+  blackduck_scan:
+    runs-on: self-hosted
     steps:
-      - name: Run linting and custom checks
-        uses: actions/setup-node@v3
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Run Black Duck Security Scan and Capture Logs
+        id: blackduck_scan
         run: |
-          npm install
-          npm run lint
-          echo "Running additional custom checks..." 
+          mkdir -p logs
+          blackduck-inc/black-duck-security-scan@v2.0.0 \
+            --blackducksca.url="${{ secrets.BLACKDUCK_URL }}" \
+            --blackducksca.token="${{ secrets.BLACKDUCK_TOKEN }}" \
+            2>&1 | tee logs/blackduck_scan.log || echo "EXIT_CODE=$?" >> logs/blackduck_exit_code.log
+
+      - name: Extract Exit Code from Logs
+        run: |
+          EXIT_CODE=$(grep -o 'EXIT_CODE=[0-9]*' logs/blackduck_exit_code.log | awk -F= '{print $2}')
+          echo "Detected Exit Code: $EXIT_CODE"
+          if [[ -z "$EXIT_CODE" ]]; then
+            echo "No exit code found in logs. Exiting with code 1."
+            exit 1
+          else
+            exit $EXIT_CODE
+          fi
