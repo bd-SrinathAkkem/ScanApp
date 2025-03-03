@@ -5,36 +5,45 @@ on:
  
 jobs:
   build:
-    runs-on: [ubuntu-latest]
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout Source
         uses: actions/checkout@v3
  
-      - name: Black Duck SCA PR Scan
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'  # Adjust based on package requirements
+ 
+      - name: Run Black Duck SCA PR Scan with npx
         id: blackduck_scan
-        continue-on-error: true  # Ignore failure and proceed
-        uses: blackduck-inc/black-duck-security-scan@v2.0.0
+        run: |
+          npx blackduck-inc/black-duck-security-scan@2.0.0 \
+            --blackducksca_url="${{ vars.BLACKDUCK_URL }}" \
+            --blackducksca_token="${{ secrets.BLACKDUCK_TOKEN }}" \
+            --blackducksca_scan_full=false \
+            --blackducksca_prComment_enabled=true \
+            --github_token="${{ secrets.GITHUB_TOKEN }}"
+          EXIT_CODE=$?
+          echo "Black Duck exit code: $EXIT_CODE"
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_ENV  # Store for later steps
         env:
           DETECT_PROJECT_NAME: ${{ github.event.repository.name }}
-        with:
-          blackducksca_url: ${{ vars.BLACKDUCK_URL }}
-          blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
-          blackducksca_scan_full: false
-          blackducksca_prComment_enabled: true
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true  # Prevent immediate failure
  
-      - name: Check Black Duck Exit Code
+      - name: Handle Black Duck Exit Code
         run: |
-          echo "Black Duck exit code: $BLACKDUCK_EXIT_CODE"
-          if [ "$BLACKDUCK_EXIT_CODE" -eq 8 ]; then
-            echo "Policy violation detected, but continuing due to testing phase."
-          elif [ "$BLACKDUCK_EXIT_CODE" -ne 0 ]; then
-            echo "Unexpected failure (exit code $BLACKDUCK_EXIT_CODE). Failing workflow."
-            exit $BLACKDUCK_EXIT_CODE
+          EXIT_CODE=${{ env.exit_code }}
+          if [ "$EXIT_CODE" -eq 8 ]; then
+            echo "Policy violation detected (exit code 8), continuing due to testing phase."
+          elif [ "$EXIT_CODE" -ne 0 ]; then
+            echo "Unexpected failure (exit code $EXIT_CODE), failing workflow."
+            exit 1
+          else
+            echo "Scan completed successfully (exit code 0)."
           fi
-        env:
-          BLACKDUCK_EXIT_CODE: ${{ steps.blackduck_scan.outputs.exit_code || job.status == 'failure' && 8 || 0 }}
  
       - name: Next Step
-        run: echo "Workflow continues regardless of Black Duck exit code 8."
+        run: echo "Workflow continues after Black Duck scan."
+repository.name
  
