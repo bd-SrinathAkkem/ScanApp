@@ -12,7 +12,7 @@ jobs:
     steps:
       - name: Checkout Source
         uses: actions/checkout@v3
- 
+
       - name: Run Black Duck Scan
         id: blackduck_scan
         uses: blackduck-inc/black-duck-security-scan@v2.0.0
@@ -20,10 +20,10 @@ jobs:
         with:
           blackducksca_url: ${{ vars.BLACKDUCK_URL }}
           blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
- 
+
       - name: Evaluate Scan Exit Code
         run: |
-          echo "EXIT_CODE=${{ steps.blackduck_scan.outputs.exitcode }}" >> $GITHUB_ENV
+          echo "EXIT_CODE=${{ steps.blackduck_scan.outputs.exitcode || 0 }}" >> $GITHUB_ENV
           if [ "${{ steps.blackduck_scan.outputs.exitcode }}" -eq 8 ]; then
             echo "BLACKDUCK_STATUS=success" >> $GITHUB_ENV
           elif [ "${{ steps.blackduck_scan.outputs.exitcode }}" -ne 0 ]; then
@@ -31,15 +31,13 @@ jobs:
             exit 1
           else
             echo "BLACKDUCK_STATUS=success" >> $GITHUB_ENV
-          fi
- 
+
       - name: Upload Black Duck Scan Report
         uses: actions/upload-artifact@v4
         with:
           name: blackduck-report
           path: scan_output.log
- 
+
       - name: Final Pipeline Status
         if: env.BLACKDUCK_STATUS == 'failure'
         run: exit 1
- 
