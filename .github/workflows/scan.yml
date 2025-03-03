@@ -44,6 +44,4 @@ jobs:
           fi
  
       - name: Next Step
-        run: echo "Workflow continues after Black Duck scan."
-repository.name
- 
+        run: echo "Workflow continues after Black Duck scan." 
