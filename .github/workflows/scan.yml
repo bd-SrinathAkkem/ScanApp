@@ -23,7 +23,7 @@ jobs:
  
       - name: Evaluate Scan Exit Code
         run: |
-          echo "EXIT_CODE=${{ steps.blackduck_scan.outcome }}" >> $GITHUB_ENV
+          echo "EXIT_CODE=${{ steps.blackduck_scan.outputs.exitcode }}" >> $GITHUB_ENV
           if [ "${{ steps.blackduck_scan.outcome }}" -eq 8 ]; then
             echo "BLACKDUCK_STATUS=success" >> $GITHUB_ENV
           elif [ "${{ steps.blackduck_scan.outcome }}" -ne 0 ]; then
