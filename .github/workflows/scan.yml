@@ -24,6 +24,7 @@ jobs:
           blackducksca_url: ${{ vars.BLACKDUCK_URL }}
           blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
         continue-on-error: true
+        mark_build_status: true
         
       - name: Decide Pipeline
         run: |
