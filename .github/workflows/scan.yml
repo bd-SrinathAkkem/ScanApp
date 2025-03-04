@@ -13,40 +13,21 @@ jobs:
       - name: Checkout Source
         uses: actions/checkout@v3
  
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
- 
-      - name: Run Black Duck SCA PR Scan with npx
+      - name: Black Duck SCA PR Scan
         id: blackduck_scan
+        uses: bd-SrinathAkkem/black-duck-security-scan@SIGINT-2798
+        with:
+          blackducksca_url: ${{ vars.BLACKDUCK_URL }}
+          blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
+          blackducksca_scan_full: false
+          blackducksca_prComment_enabled: true
+          github_token: ${{ secrets.GD_TOKEN }}
+          
+      - name: Decide Pipeline
         run: |
-          npx blackduck-inc/black-duck-security-scan@2.0.0 \
-            --blackducksca_url="${{ vars.BLACKDUCK_URL }}" \
-            --blackducksca_token="${{ secrets.BLACKDUCK_TOKEN }}" \
-            --blackducksca_scan_full=false \
-            --blackducksca_prComment_enabled=true \
-            --github_token="${{ secrets.GITHUB_TOKEN }}"
-          EXIT_CODE=$?
-          echo "Black Duck exit code: $EXIT_CODE"
-          echo "exit_code=$EXIT_CODE" >> $GITHUB_ENV  # Store for later steps
-        env:
-          DETECT_PROJECT_NAME: ${{ github.event.repository.name }}
-        continue-on-error: true  # Prevent immediate failure
- 
-      - name: Handle Black Duck Exit Code
-        run: |
-          EXIT_CODE=${{ env.exit_code }}
-          if [ "$EXIT_CODE" -eq 8 ]; then
-            echo "Policy violation detected (exit code 8), continuing due to testing phase."
-          elif [ "$EXIT_CODE" -ne 0 ]; then
-            echo "Unexpected failure (exit code $EXIT_CODE), failing workflow."
-            exit 1
-          else
-            echo "Scan completed successfully (exit code 0)."
-          fi
- 
-      - name: Next Step
-        run: echo "Workflow continues after Black Duck scan." 
-
-
+          EXIT_CODE=${{ steps.blackduck_scan.outputs.exit_code }}
+          case $EXIT_CODE in
+            0) echo "Success" ;;
+            8) echo "Policy violation, continuing" ;;
+            *) echo "Failure (exit code $EXIT_CODE)"; exit 1 ;;
+          esac
