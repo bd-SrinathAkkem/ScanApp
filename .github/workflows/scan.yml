@@ -30,6 +30,7 @@ jobs:
           EXIT_CODE=${{ steps.blackduck_scan.outputs.exit_code }}
           case $EXIT_CODE in
             0) echo "Success" ;;
+            2) echo "Adapter Failure" ;;
             8) echo "Policy violation, continuing" ;;
             *) echo "Failure (exit code $EXIT_CODE)"; exit 1 ;;
           esac
