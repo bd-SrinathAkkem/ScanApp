@@ -23,8 +23,9 @@ jobs:
         with:
           blackducksca_url: ${{ vars.BLACKDUCK_URL }}
           blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
-        continue-on-error: true
-        mark_build_status: true
+          continue_on_failure_codes: "2"
+        #continue-on-error: true
+        
         
       - name: Decide Pipeline
         run: |
