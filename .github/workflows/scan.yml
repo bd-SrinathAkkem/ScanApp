@@ -5,23 +5,22 @@ on:
   pull_request:
     branches: [ main, master, develop, stage, release ]
   workflow_dispatch:
- 
+    
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: [ ubuntu-latest ]
     steps:
       - name: Checkout Source
         uses: actions/checkout@v3
- 
-      - name: Black Duck SCA PR Scan
-        id: blackduck_scan
+      - name: Black Duck Scan
         uses: bd-SrinathAkkem/black-duck-security-scan@SIGINT-2798
+        continue-on-error: true
+        env:
+          DETECT_PROJECT_NAME: ${{ github.event.repository.name }}
+          
         with:
-          blackducksca_url: ${{ vars.BLACKDUCK_URL }}
-          blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
-          blackducksca_scan_full: false
-          blackducksca_prComment_enabled: true
-          github_token: ${{ secrets.GD_TOKEN }}
+          blackducksca_url: ${{ vars.BLACKDUCKSCA_URL }}
+          blackducksca_token: ${{ secrets.BLACKDUCKSCA_TOKEN }}
           
       - name: Decide Pipeline
         run: |
