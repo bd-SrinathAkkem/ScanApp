@@ -23,8 +23,8 @@ jobs:
         with:
           blackducksca_url: ${{ vars.BLACKDUCK_URL }}
           blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
-        continue-on-error: true
-          
+        continue_on_failure_codes: '2'
+        
       - name: Decide Pipeline
         run: |
           EXIT_CODE=${{ steps.blackduck_scan.outputs.exit_code }}
