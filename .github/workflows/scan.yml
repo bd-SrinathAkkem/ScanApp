@@ -19,8 +19,8 @@ jobs:
           DETECT_PROJECT_NAME: ${{ github.event.repository.name }}
           
         with:
-          blackducksca_url: ${{ vars.BLACKDUCKSCA_URL }}
-          blackducksca_token: ${{ secrets.BLACKDUCKSCA_TOKEN }}
+          blackducksca_url: ${{ vars.BLACKDUCK_URL }}
+          blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
           
       - name: Decide Pipeline
         run: |
