@@ -23,13 +23,13 @@ jobs:
         with:
           blackducksca_url: ${{ vars.BLACKDUCK_URL }}
           blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
-          continue_on_failure_codes: "2"
+          # mark_build_status: UNSTABLE # SUCCESS, FAILURE (!= 0 OR 8), UNSTABLE & 8
         #continue-on-error: true
         
         
       - name: Decide Pipeline
         run: |
-          EXIT_CODE=${{ steps.blackduck_scan.outputs.exit_code }}
+          EXIT_CODE=${{ steps.blackduck_scan.outputs.status }}
           case $EXIT_CODE in
             0) echo "Success" ;;
             2) echo "Adapter Failure" ;;
