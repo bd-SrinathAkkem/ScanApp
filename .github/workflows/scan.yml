@@ -23,7 +23,7 @@ jobs:
         with:
           blackducksca_url: ${{ vars.BLACKDUCK_URL }}
           blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
-          # mark_build_status: UNSTABLE # SUCCESS, FAILURE (!= 0 OR 8), UNSTABLE & 8
+          mark_build_status: UNSTABLE  # SUCCESS, FAILURE (!= 0 OR 8), UNSTABLE & 8
         continue-on-error: true
         
       - name: Decide Pipeline
