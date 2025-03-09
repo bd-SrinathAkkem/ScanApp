@@ -39,11 +39,7 @@ export async function run() {
     }
     // Execute bridge command and handle exit code
     exitCode = await sb.executeBridgeCommand(formattedCommand, getGitHubWorkspaceDirV2())
-    handleExitCode(exitCode);
-    // if (exitCode === 0 || inputs.MARK_BUILD_STATUS === constants.BUILD_STATUS.SUCCESS || (inputs.MARK_BUILD_STATUS === constants.BUILD_STATUS.UNSTABLE && exitCode === constants.BRIDGE_BREAK_EXIT_CODE)) {
-      // isBridgeExecuted = true
-      info('Black Duck Security Action workflow execution completed.');
-    // }
+    isBridgeExecuted = handleExitCode(exitCode)
     return exitCode
   } catch (error) {
     exitCode = getBridgeExitCodeAsNumericValue(error as Error)
@@ -111,24 +107,28 @@ export function getBridgeExitCode(error: Error): boolean {
   return false
 }
 
-/**
- * Handles the exit code and logs appropriate messages.
- * @param {number} exitCode - The exit code from the Bridge CLI.
- * @returns {boolean} - Whether the execution is considered successful.
- */
+// Handles the exit code and logs appropriate messages.
 function handleExitCode(exitCode: number | undefined, errorMessage = '') {
   const isPolicyViolation = exitCode === 8;
   const isSuccess = exitCode === 0 || config.markBuildStatus === constants.BUILD_STATUS.SUCCESS;
-  const isUnstableBreak = config.markBuildStatus === constants.BUILD_STATUS.UNSTABLE && exitCode === constants.BRIDGE_BREAK_EXIT_CODE;
- 
-  if (isSuccess || isUnstableBreak) {
-    debug(`Bridge CLI completed with exit code: ${exitCode}`);
-  } else if (isPolicyViolation) {
-    info(`::warning::Policy violations detected (Exit Code: ${exitCode}), but pipeline continues as successful`);
-  } else {
-    const message = errorMessage ? logBridgeExitCodes(errorMessage) : `Unknown exit code: ${exitCode}`;
-    info(`::warning::Bridge CLI failed with ${message}, but pipeline continues`);
-  }
+  const isUnstableBreak = config.markBuildStatus === constants.BUILD_STATUS.UNSTABLE && isPolicyViolation;
+
+  if (isSuccess) {
+      info('Black Duck Security Action workflow execution completed.');
+      return true
+    } else if (isUnstableBreak) {
+      info(`::warning::Policy violations detected (Exit Code: ${exitCode}), treated as unstable (non-failing)`)
+      return true
+    } 
+    /*else if (isPolicyViolation) {
+      info(`::warning::Policy violations detected (Exit Code: ${exitCode}), treated as failure`)
+      return false
+    } */
+    else {
+      const message = errorMessage ? logBridgeExitCodes(errorMessage) : `Unknown exit code: ${exitCode}`
+      info(`::warning::Bridge CLI failed with ${message}`)
+      return false
+    }
 }
 
 run().catch(error => {
