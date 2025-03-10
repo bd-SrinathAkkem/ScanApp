@@ -8,14 +8,14 @@ on:
     
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout Source
         uses: actions/checkout@v3
         
       - name: Black Duck Scan
         id: black-duck-security-scan
-        uses: bd-SrinathAkkem/black-duck-security-scan@SIGINT-2798-Test
+        uses: bd-SrinathAkkem/black-duck-security-scan@SIGINT-2798
         env:
           DETECT_PROJECT_NAME: ${{ github.event.repository.name }}
           
