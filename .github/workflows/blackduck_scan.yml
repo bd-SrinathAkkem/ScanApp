@@ -23,8 +23,11 @@ jobs:
         with:
           blackducksca_url: ${{ vars.BLACKDUCK_URL }}
           blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
-          # mark_build_status: UNSTABLE # SUCCESS, FAILURE (!= 0 OR 8), UNSTABLE & 8
-          # return_status: true # Optional - Flag to return the exit code as an output (true/false)
+          ### Mark build status if policy violating issues are found
+          # mark_build_status: 'UNSTABLE'
+            
+          ### Uncomment below to use returned status in subsequent tasks if MARK_BUILD_STATUS is not set or set to FAILED
+          # continue_on_error: true
           
           ### SCANNING: Optional fields
           # blackducksca_scan_failure_severities: 'BLOCKER,CRITICAL'
