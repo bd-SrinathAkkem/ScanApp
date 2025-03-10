@@ -17,6 +17,7 @@ jobs:
         uses: actions/setup-java@v4.7.0
         with:
           java-version: 17
+          distribution: 'temurin'
         
       - name: Black Duck Scan
         id: blackduck_scan
