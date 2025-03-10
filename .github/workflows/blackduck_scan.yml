@@ -21,7 +21,7 @@ jobs:
         
       - name: Black Duck Scan
         id: blackduck_scan
-        uses: bd-SrinathAkkem/black-duck-security-scan@SIGINT-2798
+        uses: bd-SrinathAkkem/black-duck-security-scan@SIGINT-2798-Test
         continue-on-error: true
         env:
           DETECT_PROJECT_NAME: ${{ github.event.repository.name }}
