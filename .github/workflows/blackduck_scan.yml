@@ -23,7 +23,7 @@ jobs:
           blackducksca_url: ${{ vars.BLACKDUCK_URL }}
           blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
           ### Mark build status if policy violating issues are found
-          # mark_build_status: 'UNSTABLE'
+          mark_build_status: 'UNSTABLE'
             
           ### Uncomment below to use returned status in subsequent tasks if MARK_BUILD_STATUS is not set or set to FAILED
           # continue_on_error: true
@@ -51,4 +51,4 @@ jobs:
           #   8) echo "Exit Code: 8 Policy violations detected treated as unstable proceeding with successful build." ;;
           #   *) echo "Failure (exit code $EXIT_CODE)"; exit 1 ;;
           # esac
-          echo "Black Duck Security Action Exit Code : $EXIT_CODE";;
+          echo "Black Duck Security Action Exit Code : $EXIT_CODE"
