@@ -12,17 +12,10 @@ jobs:
     steps:
       - name: Checkout Source
         uses: actions/checkout@v3
-
-      - name: Setup Java JDK
-        uses: actions/setup-java@v4.7.0
-        with:
-          java-version: 17
-          distribution: 'temurin'
         
       - name: Black Duck Scan
         id: blackduck_scan
         uses: bd-SrinathAkkem/black-duck-security-scan@SIGINT-2798-Test
-        continue-on-error: true
         env:
           DETECT_PROJECT_NAME: ${{ github.event.repository.name }}
           
@@ -53,8 +46,9 @@ jobs:
       - name: Decide Pipeline
         run: |
           EXIT_CODE=${{ steps.blackduck_scan.outputs.status }}
-          case $EXIT_CODE in
-            0) echo "Black Duck Security Action workflow execution completed." ;;
-            8) echo "Exit Code: 8 Policy violations detected treated as unstable proceeding with successful build." ;;
-            *) echo "Failure (exit code $EXIT_CODE)"; exit 1 ;;
-          esac
+          # case $EXIT_CODE in
+          #   0) echo "Black Duck Security Action workflow execution completed." ;;
+          #   8) echo "Exit Code: 8 Policy violations detected treated as unstable proceeding with successful build." ;;
+          #   *) echo "Failure (exit code $EXIT_CODE)"; exit 1 ;;
+          # esac
+          echo "Black Duck Security Action Exit Code : $EXIT_CODE";;
