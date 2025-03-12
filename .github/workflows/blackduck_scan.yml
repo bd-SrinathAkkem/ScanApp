@@ -23,7 +23,7 @@ jobs:
           blackducksca_url: ${{ vars.BLACKDUCK_URL }}
           blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
           ### Mark build status if policy violating issues are found
-          mark_build_status: 'success'
+          mark_build_status: 'failure'
             
           ### Uncomment below to use returned status in subsequent tasks if MARK_BUILD_STATUS is not set or set to FAILED
           # continue_on_error: true
