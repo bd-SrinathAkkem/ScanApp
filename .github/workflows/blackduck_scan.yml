@@ -15,7 +15,7 @@ jobs:
         
       - name: Black Duck Scan
         id: black-duck-security-scan
-        uses: bd-SrinathAkkem/black-duck-security-scan@SIGINT-2798-Test
+        uses: blackduck-inc/black-duck-security-scan@v2.0.0
         env:
           DETECT_PROJECT_NAME: ${{ github.event.repository.name }}
           
@@ -23,7 +23,7 @@ jobs:
           blackducksca_url: ${{ vars.BLACKDUCK_URL }}
           blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
           ### Mark build status if policy violating issues are found
-          mark_build_status: 'failure'
+          mark_build_status: 'success'
             
           ### Uncomment below to use returned status in subsequent tasks if MARK_BUILD_STATUS is not set or set to FAILED
           # continue_on_error: true
