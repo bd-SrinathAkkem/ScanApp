@@ -1,117 +1,119 @@
-import {debug, info, setFailed, setOutput} from '@actions/core'
-import {checkJobResult, cleanupTempDir, createTempDir, isPullRequestEvent, parseToBoolean} from './blackduck-security-action/utility'
-import {Bridge} from './blackduck-security-action/bridge-cli'
-import {getGitHubWorkspaceDir as getGitHubWorkspaceDirV2} from 'actions-artifact-v2/lib/internal/shared/config'
-import * as constants from './application-constants'
-import * as inputs from './blackduck-security-action/inputs'
-import {uploadDiagnostics, uploadSarifReportAsArtifact} from './blackduck-security-action/artifacts'
-import {isNullOrEmptyValue} from './blackduck-security-action/validators'
-import {GitHubClientServiceFactory} from './blackduck-security-action/factory/github-client-service-factory'
+import {logBridgeExitCodes, run} from '../../src/main'
+import * as inputs from '../../src/blackduck-security-action/inputs'
+import {Bridge} from '../../src/blackduck-security-action/bridge-cli'
+import {DownloadFileResponse} from '../../src/blackduck-security-action/download-utility'
+import * as downloadUtility from './../../src/blackduck-security-action/download-utility'
+import * as configVariables from 'actions-artifact-v2/lib/internal/shared/config'
+import * as diagnostics from '../../src/blackduck-security-action/artifacts'
+import {UploadArtifactResponse} from 'actions-artifact-v2'
+import {GithubClientServiceBase} from '../../src/blackduck-security-action/service/impl/github-client-service-base'
+import * as utility from '../../src/blackduck-security-action/utility'
+import {GitHubClientServiceFactory} from '../../src/blackduck-security-action/factory/github-client-service-factory'
+import {GithubClientServiceCloud} from '../../src/blackduck-security-action/service/impl/cloud/github-client-service-cloud'
+import fs from 'fs'
+import * as core from '@actions/core'
 
-export async function run() {
-  info('Black Duck Security Action started...')
-  const tempDir = await createTempDir()
-  let formattedCommand = ''
-  let isBridgeExecuted = false
-  let exitCode
+jest.mock('@actions/core')
+jest.mock('@actions/io', () => ({
+  rmRF: jest.fn()
+}))
 
-  try {
-    const sb = new Bridge()
-    // Prepare bridge command
-    formattedCommand = await sb.prepareCommand(tempDir)
-    // Download bridge
-    if (!inputs.ENABLE_NETWORK_AIR_GAP) {
-      await sb.downloadBridge(tempDir)
-    } else {
-      info('Network air gap is enabled, skipping bridge CLI download.')
-      await sb.validateBridgePath()
-    }
-    // Execute bridge command
-    exitCode = await sb.executeBridgeCommand(formattedCommand, getGitHubWorkspaceDirV2())
-    if (exitCode === 0) {
-      info('Black Duck Security Action workflow execution completed successfully.')
-      isBridgeExecuted = true
-    }
-    return exitCode
-  } catch (error) {
-    const err = error as Error;
-    exitCode = getBridgeExitCodeAsNumericValue(err)
-    isBridgeExecuted = getBridgeExitCode(err)
-    info('Workflow failed! '.concat(logBridgeExitCodes(err.message)));
-    debug(`Exit code from error: ${exitCode}, isBridgeExecuted: ${isBridgeExecuted}`);
-    if (exitCode === 8 && checkJobResult(inputs.MARK_BUILD_STATUS) === constants.BUILD_STATUS.SUCCESS) {
-      info(`Marking the build ${inputs.MARK_BUILD_STATUS} as configured in the task`);
-      isBridgeExecuted = true;
-    } else {
-      throw err
-    }
-  } finally {
-    // The statement set the exit code in the 'status' variable which can be used in the YAML file
-    if (parseToBoolean(inputs.RETURN_STATUS)) {
-      debug(`Setting output variable ${constants.TASK_RETURN_STATUS} with exit code ${exitCode}`)
-      setOutput(constants.TASK_RETURN_STATUS, exitCode)
-    }
-    const uploadSarifReportBasedOnExitCode = exitCode === 0 || exitCode === 8
-    debug(`Bridge CLI execution completed: ${isBridgeExecuted}`)
-    if (isBridgeExecuted) {
-      if (inputs.INCLUDE_DIAGNOSTICS) {
-        await uploadDiagnostics()
-      }
-      if (!isPullRequestEvent() && uploadSarifReportBasedOnExitCode) {
-        // Upload Black Duck sarif file as GitHub artifact
-        if (inputs.BLACKDUCKSCA_URL && parseToBoolean(inputs.BLACKDUCKSCA_REPORTS_SARIF_CREATE)) {
-          await uploadSarifReportAsArtifact(constants.BLACKDUCK_SARIF_GENERATOR_DIRECTORY, inputs.BLACKDUCKSCA_REPORTS_SARIF_FILE_PATH, constants.BLACKDUCK_SARIF_ARTIFACT_NAME)
-        }
+beforeEach(() => {
+  Object.defineProperty(inputs, 'GITHUB_TOKEN', {value: 'token'})
+  process.env['GITHUB_REPOSITORY'] = 'blackduck-security-action'
+  process.env['GITHUB_REF_NAME'] = 'branch-name'
+  process.env['GITHUB_REF'] = 'refs/pull/1/merge'
+  process.env['GITHUB_REPOSITORY_OWNER'] = 'blackduck-inc'
+  jest.resetModules()
+  const uploadResponse: UploadArtifactResponse = {size: 0, id: 123}
+  jest.spyOn(diagnostics, 'uploadDiagnostics').mockResolvedValueOnce(uploadResponse)
+  jest.spyOn(fs, 'renameSync').mockReturnValue()
+})
 
-        // Upload Polaris sarif file as GitHub artifact
-        if (inputs.POLARIS_SERVER_URL && parseToBoolean(inputs.POLARIS_REPORTS_SARIF_CREATE)) {
-          await uploadSarifReportAsArtifact(constants.POLARIS_SARIF_GENERATOR_DIRECTORY, inputs.POLARIS_REPORTS_SARIF_FILE_PATH, constants.POLARIS_SARIF_ARTIFACT_NAME)
-        }
-        if (!isNullOrEmptyValue(inputs.GITHUB_TOKEN)) {
-          // Upload Black Duck SARIF Report to code scanning tab
-          if (inputs.BLACKDUCKSCA_URL && parseToBoolean(inputs.BLACKDUCK_UPLOAD_SARIF_REPORT)) {
-            const gitHubClientService = await GitHubClientServiceFactory.getGitHubClientServiceInstance()
-            await gitHubClientService.uploadSarifReport(constants.BLACKDUCK_SARIF_GENERATOR_DIRECTORY, inputs.BLACKDUCKSCA_REPORTS_SARIF_FILE_PATH)
-          }
-          // Upload Polaris SARIF Report to code scanning tab
-          if (inputs.POLARIS_SERVER_URL && parseToBoolean(inputs.POLARIS_UPLOAD_SARIF_REPORT)) {
-            const gitHubClientService = await GitHubClientServiceFactory.getGitHubClientServiceInstance()
-            await gitHubClientService.uploadSarifReport(constants.POLARIS_SARIF_GENERATOR_DIRECTORY, inputs.POLARIS_REPORTS_SARIF_FILE_PATH)
-          }
-        }
-      }
+afterEach(() => {
+  jest.restoreAllMocks()
+})
+
+describe('Black Duck Security Action: Handling isBridgeExecuted and Exit Code Information Messages', () => {
+  const setupBlackDuckInputs = (extraInputs: Record<string, any> = {}) => {
+    Object.defineProperty(inputs, 'BLACKDUCKSCA_URL', {value: 'BLACKDUCKSCA_URL'})
+    Object.defineProperty(inputs, 'BLACKDUCKSCA_TOKEN', {value: 'BLACKDUCKSCA_TOKEN'})
+    Object.defineProperty(inputs, 'DETECT_INSTALL_DIRECTORY', {value: 'DETECT_INSTALL_DIRECTORY'})
+    Object.defineProperty(inputs, 'DETECT_SCAN_FULL', {value: 'TRUE'})
+    Object.defineProperty(inputs, 'BLACKDUCKSCA_SCAN_FAILURE_SEVERITIES', {value: 'ALL'})
+    Object.defineProperty(inputs, 'BLACKDUCKSCA_FIXPR_ENABLED', {value: 'false'})
+    Object.defineProperty(inputs, 'BLACKDUCKSCA_PRCOMMENT_ENABLED', {value: true})
+    Object.defineProperty(inputs, 'RETURN_STATUS', {value: true})
+    for (const [key, value] of Object.entries(extraInputs)) {
+      Object.defineProperty(inputs, key, {value, writable: true})
     }
-    await cleanupTempDir(tempDir)
   }
-}
 
-export function logBridgeExitCodes(message: string): string {
-  const exitCode = message.trim().slice(-1)
-  return constants.EXIT_CODE_MAP.has(exitCode) ? `Exit Code: ${exitCode} ${constants.EXIT_CODE_MAP.get(exitCode)}` : message
-}
-
-export function getBridgeExitCodeAsNumericValue(error: Error): number {
-  if (error.message !== undefined) {
-    const lastChar = error.message.trim().slice(-1)
-    const exitCode = parseInt(lastChar)
-    return isNaN(exitCode) ? -1 : exitCode
+  const setupMocks = (exitCode: number) => {
+    jest.spyOn(Bridge.prototype, 'getBridgeVersionFromLatestURL').mockResolvedValueOnce('0.1.0')
+    const downloadFileResp: DownloadFileResponse = {
+      filePath: 'C://user/temp/download/',
+      fileName: 'C://user/temp/download/bridge-win.zip'
+    }
+    jest.spyOn(downloadUtility, 'getRemoteFile').mockResolvedValueOnce(downloadFileResp)
+    jest.spyOn(downloadUtility, 'extractZipped').mockResolvedValueOnce(true)
+    jest.spyOn(configVariables, 'getGitHubWorkspaceDir').mockReturnValueOnce('/home/bridge')
+    jest.spyOn(Bridge.prototype, 'executeBridgeCommand').mockResolvedValueOnce(exitCode)
+    const uploadResponse: UploadArtifactResponse = {size: 0, id: 123}
+    jest.spyOn(diagnostics, 'uploadDiagnostics').mockResolvedValueOnce(uploadResponse)
   }
-  return -1
-}
 
-export function getBridgeExitCode(error: Error): boolean {
-  if (error.message !== undefined) {
-    const lastChar = error.message.trim().slice(-1)
-    const num = parseFloat(lastChar)
-    return !isNaN(num)
-  }
-  return false
-}
+  afterEach(() => {
+    Object.defineProperty(inputs, 'BLACKDUCKSCA_URL', {value: null})
+  })
 
-run().catch(error => {
-  if (error.message != undefined) {
-    setFailed('Workflow failed! '.concat(logBridgeExitCodes(error.message)))
-  } else {
-    setFailed('Workflow failed! '.concat(logBridgeExitCodes(error)))
-  }
+  it('handles successful execution with exitCode 0', async () => {
+    setupBlackDuckInputs()
+    setupMocks(0)
+    const response = await run()
+
+    expect(response).toBe(0)
+    expect(core.info).toHaveBeenCalledWith('Black Duck Security Action workflow execution completed successfully.')
+    expect(core.setOutput).toHaveBeenCalledWith('status', 0)
+    expect(core.debug).toHaveBeenCalledWith('Bridge CLI execution completed: true')
+  })
+
+  it('handles issues detected but marked as success with exitCode 8', async () => {
+    setupBlackDuckInputs({MARK_BUILD_STATUS: 'success'})
+    setupMocks(8)
+    jest.spyOn(utility, 'checkJobResult').mockReturnValue('success')
+
+    const response = await run()
+
+    expect(response).toBe(8)
+    expect(core.info).toHaveBeenCalledWith(expect.stringContaining('Marking the build success as configured in the task.'))
+    expect(core.setOutput).toHaveBeenCalledWith('status', 8)
+    expect(core.debug).toHaveBeenCalledWith('Bridge CLI execution completed: true')
+  })
+
+  it('handles failure case with exitCode 2', async () => {
+    setupBlackDuckInputs()
+    setupMocks(2)
+
+    const response = await run()
+    expect(response).toBe(2)
+    expect(core.setOutput).toHaveBeenCalledWith('status', 2)
+    expect(core.debug).toHaveBeenCalledWith('Bridge CLI execution completed: false')
+  })
+
+  it('uploads SARIF report for exitCode 8', async () => {
+    setupBlackDuckInputs({
+      BLACKDUCKSCA_REPORTS_SARIF_CREATE: 'true',
+      BLACKDUCKSCA_REPORTS_SARIF_FILE_PATH: '/',
+      MARK_BUILD_STATUS: 'success'
+    })
+    setupMocks(8)
+    jest.spyOn(utility, 'checkJobResult').mockReturnValue('success')
+    jest.spyOn(utility, 'isPullRequestEvent').mockReturnValue(false)
+    const uploadResponse: UploadArtifactResponse = {size: 0, id: 123}
+    jest.spyOn(diagnostics, 'uploadSarifReportAsArtifact').mockResolvedValueOnce(uploadResponse)
+
+    await run()
+    expect(diagnostics.uploadSarifReportAsArtifact).toHaveBeenCalledWith('Blackduck SCA SARIF Generator', '/', 'blackduck_sarif_report')
+  })
 })
