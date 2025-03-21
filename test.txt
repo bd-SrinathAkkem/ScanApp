@@ -1,0 +1,121 @@
+Start with a decision node: "Airgap Mode Enabled?". From here, the flow splits into two paths: "No" (Non-Airgap) and "Yes" (Airgap).
+
+**Path 1: Airgap Mode Enabled? = No (Non-Airgap)**  
+The "No" branch leads to a second decision node: "Thin Client or Thick Client?". This splits into "Thin Client" and "Thick Client".
+
+- **Subpath 1.1: Thin Client or Thick Client? = Thin Client (Non-Airgap)**  
+  This leads to a third decision node: "Is Bridge Cached?". It splits into "No" and "Yes".  
+  - **Subpath 1.1.1: Is Bridge Cached? = No**  
+    This leads to a fourth decision node: "Bridge Download URL Provided?". It splits into "No" and "Yes".  
+    - **Subpath 1.1.1.1: URL Provided? = No**  
+      This leads to a fifth decision node: "Bridge Download Version Provided?". It splits into "No" and "Yes".  
+      - If "No", then a sixth decision node: "Workflow Version Provided?". If "No", action is "Download latest Bridge CLI". If "Yes", action is "Download latest Bridge, use workflow version".  
+      - If "Yes", then a sixth decision node: "Workflow Version Provided?". If "No", action is "Download provided version of Bridge into user-provided directory". If "Yes", action is "Download provided version of Bridge into BID path, use workflow version".  
+    - **Subpath 1.1.1.2: URL Provided? = Yes**  
+      This leads to a fifth decision node: "Bridge Download Version Provided?". It splits into "No" and "Yes".  
+      - If "No", then a sixth decision node: "Workflow Version Provided?". If "No", action is "Download Bridge CLI into default directory". If "Yes", action is "Download Bridge CLI into default directory, use workflow version".  
+      - If "Yes", then a sixth decision node: "Workflow Version Provided?". If "No", action is "Download Bridge CLI into BID path". If "Yes", action is "Download provided version of Bridge into BID path, use workflow version".  
+  - **Subpath 1.1.2: Is Bridge Cached? = Yes**  
+    This leads to a fourth decision node: "Bridge Download URL Provided?". It splits into "No" and "Yes".  
+    - **Subpath 1.1.2.1: URL Provided? = No**  
+      This leads to a fifth decision node: "Bridge Download Version Provided?". It splits into "No" and "Yes".  
+      - If "No", then a sixth decision node: "Workflow Version Provided?". If "No", action is "Skip download". If "Yes", action is "Skip download, use workflow version".  
+      - If "Yes", then a sixth decision node: "Workflow Version Provided?". If "No", action is "Skip download if same version exists, else download Bridge". If "Yes", action is "Skip download if same version exists, else download Bridge, use workflow version".  
+    - **Subpath 1.1.2.2: URL Provided? = Yes**  
+      This leads to a fifth decision node: "Bridge Download Version Provided?". It splits into "No" and "Yes".  
+      - If "No", then a sixth decision node: "Workflow Version Provided?". If "No", action is "Skip download if same version exists, else download Bridge". If "Yes", action is "Skip download if same version exists, else download Bridge, use workflow version".  
+      - If "Yes", then a sixth decision node: "Workflow Version Provided?". If "No", action is "Skip download if same version exists, else download Bridge". If "Yes", action is "Skip download if same version exists, else download Bridge, use workflow version".  
+
+- **Subpath 1.2: Thin Client or Thick Client? = Thick Client (Non-Airgap)**  
+  This leads to a third decision node: "Is Bridge Cached?". It splits into "No" and "Yes".  
+  - **Subpath 1.2.1: Is Bridge Cached? = No**  
+    This leads to a fourth decision node: "Bridge Download URL Provided?". It splits into "No" and "Yes".  
+    - **Subpath 1.2.1.1: URL Provided? = No**  
+      This leads to a fifth decision node: "Bridge Download Version Provided?". It splits into "No" and "Yes".  
+      - If "No", action is "Download latest Bridge".  
+      - If "Yes", action is "Download provided version of Bridge".  
+    - **Subpath 1.2.1.2: URL Provided? = Yes**  
+      This leads to a fifth decision node: "Bridge Download Version Provided?". It splits into "No" and "Yes".  
+      - If "No", action is "Download Bridge CLI into default directory".  
+      - If "Yes", action is "Download Bridge CLI into BID path".  
+  - **Subpath 1.2.2: Is Bridge Cached? = Yes**  
+    This leads to a fourth decision node: "Bridge Download URL Provided?". It splits into "No" and "Yes".  
+    - **Subpath 1.2.2.1: URL Provided? = No**  
+      This leads to a fifth decision node: "Bridge Download Version Provided?". It splits into "No" and "Yes".  
+      - If "No", action is "Skip download".  
+      - If "Yes", action is "Skip download if same version exists, else download Bridge".  
+    - **Subpath 1.2.2.2: URL Provided? = Yes**  
+      This leads to a fifth decision node: "Bridge Download Version Provided?". It splits into "No" and "Yes".  
+      - If "No", action is "Skip download if same version exists, else download Bridge".  
+      - If "Yes", action is "Skip download if same version exists, else download Bridge".  
+
+**Path 2: Airgap Mode Enabled? = Yes (Airgap)**  
+The "Yes" branch leads to a second decision node: "Thin Client or Thick Client?". This splits into "Thin Client" and "Thick Client".
+
+- **Subpath 2.1: Thin Client or Thick Client? = Thin Client (Airgap)**  
+  This leads to a third decision node: "Is Bridge Cached?". It splits into "No" and "Yes".  
+  - **Subpath 2.1.1: Is Bridge Cached? = No**  
+    This leads to a fourth decision node: "Bridge Download URL Provided?". It splits into "No" and "Yes".  
+    - **Subpath 2.1.1.1: URL Provided? = No**  
+      This leads to a fifth decision node: "Bridge Download Version Provided?". It splits into "No" and "Yes".  
+      - If "No", action is "Bridge will not be downloaded, should error out".  
+      - If "Yes", action is "Bridge will not be downloaded, should error out".  
+    - **Subpath 2.1.1.2: URL Provided? = Yes**  
+      This leads to a fifth decision node: "Bridge Download Version Provided?". It splits into "No" and "Yes".  
+      - If "No", then a sixth decision node: "Workflow Version Provided?". If "No", action is "Download Bridge CLI into default directory". If "Yes", action is "Download Bridge CLI into default directory, use workflow version".  
+      - If "Yes", then a sixth decision node: "Workflow Version Provided?". If "No", action is "Download Bridge CLI into BID path". If "Yes", action is "Download provided version of Bridge into BID path, use workflow version".  
+  - **Subpath 2.1.2: Is Bridge Cached? = Yes**  
+    This leads to a fourth decision node: "Bridge Download URL Provided?". It splits into "No" and "Yes".  
+    - **Subpath 2.1.2.1: URL Provided? = No**  
+      This leads to a fifth decision node: "Bridge Download Version Provided?". It splits into "No" and "Yes".  
+      - If "No", action is "Skip download".  
+      - If "Yes", action is "Skip download if same version exists, else download Bridge, use workflow version".  
+    - **Subpath 2.1.2.2: URL Provided? = Yes**  
+      This leads to a fifth decision node: "Bridge Download Version Provided?". It splits into "No" and "Yes".  
+      - If "No", action is "Skip download if same version exists, else download Bridge".  
+      - If "Yes", then a sixth decision node: "Workflow Version Provided?". If "No", action is "Skip download if same version exists, else download Bridge". If "Yes", action is "Skip download if same version exists, else download Bridge, use workflow version".  
+
+- **Subpath 2.2: Thin Client or Thick Client? = Thick Client (Airgap)**  
+  This leads to a third decision node: "Is Bridge Cached?". It splits into "No" and "Yes".  
+  - **Subpath 2.2.1: Is Bridge Cached? = No**  
+    This leads to a fourth decision node: "Bridge Download URL Provided?". It splits into "No" and "Yes".  
+    - **Subpath 2.2.1.1: URL Provided? = No**  
+      This leads to a fifth decision node: "Bridge Download Version Provided?". It splits into "No" and "Yes".  
+      - If "No", action is "Download latest Bridge".  
+      - If "Yes", action is "Download provided version of Bridge".  
+    - **Subpath 2.2.1.2: URL Provided? = Yes**  
+      This leads to a fifth decision node: "Bridge Download Version Provided?". It splits into "No" and "Yes".  
+      - If "No", action is "Download Bridge CLI into default directory".  
+      - If "Yes", action is "Download Bridge CLI into BID path".  
+  - **Subpath 2.2.2: Is Bridge Cached? = Yes**  
+    This leads to a fourth decision node: "Bridge Download URL Provided?". It splits into "No" and "Yes".  
+    - **Subpath 2.2.2.1: URL Provided? = No**  
+      This leads to a fifth decision node: "Bridge Download Version Provided?". It splits into "No" and "Yes".  
+      - If "No", action is "Skip download".  
+      - If "Yes", action is "Skip download if same version exists, else download Bridge".  
+    - **Subpath 2.2.2.2: URL Provided? = Yes**  
+      This leads to a fifth decision node: "Bridge Download Version Provided?". It splits into "No" and "Yes".  
+      - If "No", action is "Skip download if same version exists, else download Bridge".  
+      - If "Yes", action is "Skip download if same version exists, else download Bridge".  
+
+---
+
+### How to Generate the Flowchart
+1. **Start Node**: Begin with "Airgap Mode Enabled?" as the root decision.
+2. **Decision Nodes**: Add each decision point as an oval or diamond:
+   - "Airgap Mode Enabled?" (splits to "No" and "Yes").
+   - "Thin Client or Thick Client?" (two instances: one for Non-Airgap, one for Airgap).
+   - "Is Bridge Cached?" (four instances: Non-Airgap Thin, Non-Airgap Thick, Airgap Thin, Airgap Thick).
+   - "Bridge Download URL Provided?" (eight instances: one for each Cache state per scenario).
+   - "Bridge Download Version Provided?" (sixteen instances: one for each URL state per scenario).
+   - "Workflow Version Provided?" (multiple instances for Thin Client paths).
+3. **Action Nodes**: Add each action as a rectangle, connecting to the appropriate decision outcome. Use colors to differentiate:
+   - Blue for Thin Client Non-Airgap.
+   - Green for Thin Client Airgap.
+   - Red for Thick Client Non-Airgap.
+   - Purple for Thick Client Airgap.
+4. **Edges**: Draw arrows with labels ("No", "Yes", "+WF", "-WF") to indicate conditions.
+5. **Layout**: Arrange vertically or horizontally:
+   - Split "Non-Airgap" and "Airgap" as two main branches from the top.
+   - Under each, split into "Thin Client" and "Thick Client".
+   - Further subdivide by "Cached", "URL", "Version", and "Workflow" as needed.
