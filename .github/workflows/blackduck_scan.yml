@@ -38,11 +38,4 @@ jobs:
           ### SARIF report generation and upload to GitHub Adavanced Security: Uncomment below to enable
           # blackducksca_reports_sarif_create: true # Create Black Duck SARIF report and upload it as artifact
           # blackducksca_upload_sarif_report: true  # Upload Black Duck SARIF report in GitHub Advanced Security tab
-        
-      ### Uncomment below configuration to add custom logic based on return status
-      - name: cmdLine
-        id: cmdLine
-        run: |
-          EXIT_CODE=${{ steps.black-duck-security-scan.outputs.status }}
-          echo "Black Duck Security Scan exit status - $EXIT_CODE"
-
+      
