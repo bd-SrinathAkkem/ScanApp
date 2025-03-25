@@ -38,4 +38,4 @@ jobs:
           ### SARIF report generation and upload to GitHub Adavanced Security: Uncomment below to enable
           # blackducksca_reports_sarif_create: true # Create Black Duck SARIF report and upload it as artifact
           # blackducksca_upload_sarif_report: true  # Upload Black Duck SARIF report in GitHub Advanced Security tab
-      
+    
