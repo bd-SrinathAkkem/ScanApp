@@ -24,6 +24,7 @@ jobs:
           blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
           ### Mark build status if policy violating issues are found
           mark_build_status: success
+          custom_install_dir: 'custom/blackduck/integrations'
             
           ### Uncomment below to use returned status in subsequent tasks if MARK_BUILD_STATUS is not set or set to FAILED
           # continue_on_error: true
