@@ -1,11 +1,5 @@
 import {debug, info, setFailed, setOutput} from '@actions/core'
-import {
-  checkJobResult,
-  cleanupTempDir,
-  createTempDir,
-  isPullRequestEvent,
-  parseToBoolean
-} from './blackduck-security-action/utility'
+import {checkJobResult, cleanupTempDir, createTempDir, isPullRequestEvent, parseToBoolean} from './blackduck-security-action/utility'
 import {Bridge} from './blackduck-security-action/bridge-cli'
 import {getGitHubWorkspaceDir as getGitHubWorkspaceDirV2} from 'actions-artifact-v2/lib/internal/shared/config'
 import * as constants from './application-constants'
@@ -14,12 +8,11 @@ import {uploadDiagnostics, uploadSarifReportAsArtifact} from './blackduck-securi
 import {isNullOrEmptyValue} from './blackduck-security-action/validators'
 import {GitHubClientServiceFactory} from './blackduck-security-action/factory/github-client-service-factory'
 
-let isBridgeExecuted = false
-
 export async function run() {
   info('Black Duck Security Action started...')
   const tempDir = await createTempDir()
   let formattedCommand = ''
+  let isBridgeExecuted = false
   let exitCode
 
   try {
@@ -35,21 +28,14 @@ export async function run() {
     }
     // Execute bridge command
     exitCode = await sb.executeBridgeCommand(formattedCommand, getGitHubWorkspaceDirV2())
-    if (exitCode === 0) {
-      isBridgeExecuted = true
-      info('Black Duck Security Action workflow execution completed')
-    }
-    return exitCode
-  } catch (error) {
-    exitCode = getBridgeExitCodeAsNumericValue(error as Error)
-    isBridgeExecuted = getBridgeExitCode(error as Error)
-    throw error
-  } finally {
     // The statement set the exit code in the 'status' variable which can be used in the YAML file
     if (parseToBoolean(inputs.RETURN_STATUS)) {
       debug(`Setting output variable ${constants.TASK_RETURN_STATUS} with exit code ${exitCode}`)
       setOutput(constants.TASK_RETURN_STATUS, exitCode)
     }
+  } catch (error) {
+    throw error
+  } finally {
     const uploadSarifReportBasedOnExitCode = exitCode === 0 || exitCode === 8
     debug(`Bridge CLI execution completed: ${isBridgeExecuted}`)
     if (isBridgeExecuted) {
@@ -107,17 +93,37 @@ export function getBridgeExitCode(error: Error): boolean {
   return false
 }
 
+export function markBuildStatusIfIssuesArePresent(status: number, taskResult: string, errorMessage: string): void {
+  const exitMessage = logBridgeExitCodes(errorMessage)
+
+  if (status === constants.BRIDGE_BREAK_EXIT_CODE) {
+    info(errorMessage)
+    if (taskResult === constants.BUILD_STATUS.SUCCESS) {
+      info(exitMessage)
+    }
+    info(`Marking the build ${taskResult} as configured in the task.`)
+    isBridgeExecuted = true
+  } else {
+    setFailed('Workflow failed! '.concat(logBridgeExitCodes(errorMessage)))
+  }
+}
+
 run().catch(error => {
-  if (error.message != undefined) {
-    info('Workflow failed! '.concat(logBridgeExitCodes(error.message)))
-    let exitCode: number = getBridgeExitCodeAsNumericValue(error)
-    if (exitCode === 8 && checkJobResult(inputs.MARK_BUILD_STATUS) === constants.BUILD_STATUS.SUCCESS) {
-      info(`Marking the build ${inputs.MARK_BUILD_STATUS} as configured in the task.`)
-      isBridgeExecuted = true
+  if (error.message !== undefined) {
+    const isReturnStatusEnabled = parseToBoolean(inputs.RETURN_STATUS)
+    const exitCode = getBridgeExitCodeAsNumericValue(error)
+
+    if (isReturnStatusEnabled) {
+      debug(`Setting output variable ${constants.TASK_RETURN_STATUS} with exit code ${exitCode}`)
+      setOutput(constants.TASK_RETURN_STATUS, exitCode)
+    }
+
+    const taskResult: string | undefined = checkJobResult(inputs.MARK_BUILD_STATUS)
+
+    if (taskResult !== undefined && taskResult !== constants.BUILD_STATUS.FAILURE) {
+      markBuildStatusIfIssuesArePresent(exitCode, taskResult, error.message)
     } else {
       setFailed('Workflow failed! '.concat(logBridgeExitCodes(error.message)))
     }
-  } else {
-    setFailed('Workflow failed! '.concat(logBridgeExitCodes(error)))
   }
 })
