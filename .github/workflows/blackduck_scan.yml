@@ -15,7 +15,7 @@ jobs:
         
       - name: Black Duck Scan
         id: black-duck-security-scan
-        uses: bd-SrinathAkkem/black-duck-security-scan@workflowVersion
+        uses: blackduck-inc/black-duck-security-scan@v2.1.1
         env:
           DETECT_PROJECT_NAME: ${{ github.event.repository.name }}
           
