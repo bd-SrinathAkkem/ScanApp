@@ -1,98 +1,63 @@
-Data/Uploading SARIF report to GitHub Advanced Security failed - SIGINT 2769
+LLM Labs Registration
+What is your Username?
 
-Issue : SARIF Report works correctly for GitHub cloud / saas but fails for GitHub Enterprise. Data issue and Upload Error for SARIF Report using Blackduck security action
+What is your Managers Username?
 
-Priority : Critical (Reported by Customer)
-- They implemented and tested this solution in their testing with github saas and moved to production with github enterprise and that’s where they hit this issue
+What Team/Group are you in?
 
-Error from logs:
-Fetching GitHub client service instance...
-GitHub Enterprise Server version 3.14.1 is not supported, proceeding with default version 3.12
-Uploading SARIF results to GitHub
-Error: Workflow failed! Uploading SARIF report to GitHub Advanced Security failed: Error: Cookies must be enabled to use GitHub
+What is your intended usage?
 
+Include Hackathon/R&D project links or Aha/Jira tracking links. "Just messing around" is equally valid.
+What Model do you intend to use?
 
-TEAMS Channel Thread: Carmelo Caisip: GitHub action, SARIF file upload error
+GPT 3.5
 
-Solution: 
+GPT 3.5 16k
 
-Before :
- this.githubApiURL = this.githubServerUrl === constants.GITHUB_CLOUD_URL ? constants.GITHUB_CLOUD_API_URL : this.githubServerUrl;
+GPT 4
 
-After:
-this.githubApiURL = process.env[constants.GITHUB_ENVIRONMENT_VARIABLES.GITHUB_API_URL] || '';
+GPT 4 16k
 
-Before:
-const data = {
-                        commit_sha: this.commit_sha,
-                        ref: this.githubRef,
-                        sarif: base64Sarif,
-                        validate: true
-                    };
+Other
+If "Other", what other model(s) would you use?
 
+What techniques beyond text/chat completion do you intend to use?
 
-After:
-const data = this.createSarifData(base64Sarif);
+Embedding
 
-private createSarifData(base64Sarif: string): SarifData {
-    const data: SarifData = {
-      commit_sha: this.commit_sha,
-      ref: this.githubRef,
-      sarif: base64Sarif
-    }
-    if (this.githubApiURL === constants.GITHUB_CLOUD_API_URL) {
-      data.validate = true
-    }
-    return data
-  }
+Function/Tool calling
 
-export interface SarifData {
-  commit_sha: string
-  ref: string
-  sarif: string
-  validate?: boolean
-}
+Image Generation
 
-SIGINT - 2887 - GitHub Action: Test SARIF on GHE 3.15
+Audio Transcription
 
-We got security license for GHE 3.15 version. So as part of this ticket we nee to verify:
+Fine Tuning
 
-SARIF upload.
+Other
+It's ok to be basic too!
+If "Other", what other technique(s) would you use?
 
-make sure UI filters and date shown on advance security is in sync with GH cloud all features of code scanning working as expected.
+What Client APIs do you intend to use?
 
-Regression test for Fix PR, PR comment are working as expected
+OpenAI
 
-Log msg “ GitHub Enterprise Server version 3.15.4 is not supported, proceeding with default version 3.12” may not make sense:
+Langchain
 
-should we add 3.15 as supported version as we have Indra to verify? this depends on below points if we know what is the contract changes between 3.12 or 3.15
+Promptchainer
 
-if not we need to modify the message accordingly.
+Dust
 
-Check if any contract diff between 3.12 and 3.15 based on all incremental release notes , REST API docs for these version, runner version etc.
+Other
+If "Other", what other client(s) would you use?
 
-Need to check with Raj if we should start officially claiming version support for 3.15.
+Are you using customer originated data in either prompting or evaluation of your application?
 
+Yes
 
-POLDOCS
-GitHub Action: GitHub advance security for GHE server
-Update prod documentation for  GitHub advance security SARIF upload support for GHE server:
+No
+Not is not a blocker or a requirement, so just be honest.
+What data are you using for generation/training/evaluation?
 
-GitHub Action supports SARIF upload to Github Advance security dashboard for GitHub Enterprise Server. Our changes has been verified on Enterprise server 3.15 version.
+Please include both high level descriptions and source data links if available.
 
-Prerequisites for uplaoding SARIF to Github Advance security dashboard for GitHub Enterprise Server are:
-
-@Srinath Akkem  to add details
-
-
-
-
-
-
-
-
-
-
-
-
-
+write answers for all these , include good things so i can learn and try to support for the AI project initiatives ,no image and audio thing, use best ai models and I'm just learning and also include links
