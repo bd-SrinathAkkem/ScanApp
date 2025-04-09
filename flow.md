@@ -10,3 +10,5 @@ Invoke-WebRequest -Uri "https://gitlab-runner-downloads.s3.amazonaws.com/latest/
 .\gitlab-runner.exe install
 
 .\gitlab-runner.exe start
+
+.\gitlab-runner.exe run
