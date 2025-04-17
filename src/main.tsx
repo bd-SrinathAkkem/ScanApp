@@ -3,8 +3,5 @@ import 'bootstrap/dist/css/bootstrap.css' // add this to use the bootsrap css fi
 import App from './App.tsx'
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-  <SR></SR>
+    <App/>
 )
