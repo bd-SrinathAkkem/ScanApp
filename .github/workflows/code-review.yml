@@ -13,6 +13,10 @@ jobs:
         
       - name: Run PR Review Bot
         uses: bd-SrinathAkkem/bd-ai-pr-review@macOS
+        with:
+          github_token: ${{ secrets.PR_REVIEW_TOKEN }}
+          pr_url: "https://github.com/bd-SrinathAkkem/ScanApp/pull/2"
+          model: "codellama"
 
       - name: Check Complete
         run: |
