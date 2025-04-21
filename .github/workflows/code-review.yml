@@ -6,24 +6,14 @@ on:
 
 jobs:
   review:
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      matrix:
-        runner: [self-hosted, ubuntu-latest]
-
+    runs-on: self-hosted
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
-      # - name: Set up Python
-      #   uses: actions/setup-python@v4
-      #   with:
-      #     python-version: '3.13.2'
-
-      # - name: Install dependencies
-      #   run: pip install -r requirements.txt
-
+        
       - name: Run PR Review Bot
-        env:
-          OLLAMA_API_URL: "http://localhost:11434"
-        run: python main.py
+        uses: bd-SrinathAkkem/bd-ai-pr-review@v1.0.0
+
+      - name: Check Complete
+        run: |
+          echo "PR Review Completed."
