@@ -13,10 +13,13 @@ jobs:
         
       - name: Run PR Review Bot
         uses: bd-SrinathAkkem/bd-ai-pr-review@macOS
+        env:
+          PR_NUMBER: ${{ github.event.number }}
+          REPO_NAME: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.PR_REVIEW_TOKEN }}
         with:
-          github_token: ${{ secrets.PR_REVIEW_TOKEN }}
           model: "codellama"
-          mode: monitor
+          mode: chat
 
       - name: Check Complete
         run: |
