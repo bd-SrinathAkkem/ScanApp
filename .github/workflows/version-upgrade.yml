@@ -8,12 +8,11 @@ on:
 jobs:
   sync-version-tags:
     name: Create Release Tag
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
  
     env:
       ENABLE_MAJOR_TAG: true
       ENABLE_LATEST_TAG: true
-      ENABLE_RELEASE: true
  
     permissions:
       contents: write
@@ -67,11 +66,3 @@ jobs:
           else
             echo "Latest tag update skipped"
           fi
- 
-      - name: Create GitHub Release
-        if: env.ENABLE_RELEASE == 'true'
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: ${{ steps.version.outputs.tag }}
-          generate_release_notes: true
