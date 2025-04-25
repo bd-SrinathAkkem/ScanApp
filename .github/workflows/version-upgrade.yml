@@ -1,68 +1,122 @@
-name: VersionUpgrade
+name: VersionRelease
  
 on:
-  push:
-    tags:
-      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag to release'
+        required: true
+      sync_major:
+        description: 'Update major version tag'
+        default: 'true'
+        required: true
+      sync_latest:
+        description: 'Update latest tag'
+        default: 'true'
+        required: true
+      github_release:
+        description: 'Create GitHub release'
+        default: 'false'
+        required: false
+ 
+permissions:
+  contents: write
+  id-token: write
+  
+env:
+  NODE_VERSION: 18.x
  
 jobs:
-  sync-version-tags:
-    name: Create Release Tag
-    runs-on: self-hosted
+  build:
+    name: Build
+    runs-on: [self-hosted]
  
-    env:
-      ENABLE_MAJOR_TAG: true
-      ENABLE_LATEST_TAG: true
- 
-    permissions:
-      contents: write
-      id-token: write
+    outputs:
+      tag: ${{ steps.out.outputs.tag }}
  
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v3
+ 
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
  
       - name: Configure Git
         run: |
           git config user.name "Actions"
           git config user.email "actions@github.com"
  
-      - name: Extract and validate version
-        id: version
-        run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          echo "Processing pushed tag: $TAG"
+      - name: Tag
+        id: out
+        run: echo "tag=${{ github.event.inputs.tag_name }}" >> $GITHUB_OUTPUT
  
-          if [[ "$TAG" =~ ^v([0-9]+)\.[0-9]+\.[0-9]+$ ]]; then
-            MAJOR_TAG="v${BASH_REMATCH[1]}"
-            echo "tag=$TAG" >> $GITHUB_OUTPUT
-            echo "major=$MAJOR_TAG" >> $GITHUB_OUTPUT
-            echo "Valid semver detected: $TAG"
-          else
-            echo "Invalid tag format '$TAG'. Use vX.Y.Z"
-            exit 1
-          fi
+      - name: Version
+        run: |
+          npm ci
+          npx npe version "${{ github.event.inputs.tag_name }}"
+ 
+      - name: Build
+        run: npm run build
+ 
+      - name: Commit
+        run: |
+          git add .
+          git commit -m "Release ${{ github.event.inputs.tag_name }}"
+          git tag "${{ github.event.inputs.tag_name }}"
+          git push origin main
+          git push origin "${{ github.event.inputs.tag_name }}"
+ 
+      - name: Upload a Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/*.js*
+ 
+  tags:
+    name: Tags
+    runs-on: [self-hosted]
+    needs: build
+    if: ${{ github.event.inputs.sync_major == 'true' || github.event.inputs.sync_latest == 'true' }}
+ 
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v3
  
       - name: Sync Tags
         run: |
+          TAG="${{ needs.build.outputs.tag }}"
+          [[ "$TAG" =~ ^v([0-9]+)\.[0-9]+\.[0-9]+$ ]] || exit 1
+          MAJOR="v${BASH_REMATCH[1]}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "major=$MAJOR" >> $GITHUB_OUTPUT
+          echo "Valid semver detected: $TAG"
           git fetch --tags
-          TAG="${{ steps.version.outputs.tag }}"
-          MAJOR="${{ steps.version.outputs.major }}"
- 
-          if [[ "${ENABLE_MAJOR_TAG}" == "true" ]]; then
+          if [[ "${{ github.event.inputs.sync_major }}" == "true" ]]; then
             echo "Updating major tag '$MAJOR' -> $TAG"
             git tag -f "$MAJOR" "$TAG"
             git push origin "$MAJOR" --force
             echo "'$MAJOR' tag updated"
-          else
-            echo "Major tag update skipped"
           fi
- 
-          if [[ "${ENABLE_LATEST_TAG}" == "true" ]]; then
+          if [[ "${{ github.event.inputs.sync_latest }}" == "true" ]]; then
             echo "Updating 'latest' tag -> $TAG"
             git tag -f latest "$TAG"
             git push origin latest --force
             echo "'latest' tag updated"
-          else
-            echo "Latest tag update skipped"
           fi
+ 
+  release:
+    name: Create Release
+    runs-on: [self-hosted]
+    needs: build
+    if: ${{ github.event.inputs.github_release == 'true' }}
+ 
+    steps:
+      - name: Publish
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.build.outputs.tag }}
+          name: ${{ needs.build.outputs.tag }}
+          generate_release_notes: true
+ 
