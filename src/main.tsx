@@ -5,6 +5,8 @@ import App from './App.tsx'
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
-  </StrictMode>,
-  <SR></SR>
+  </StrictMode>
 )
+
+// Version v1.0.0
+// Created by: SR
