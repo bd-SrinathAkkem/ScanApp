@@ -2,8 +2,8 @@ name: VersionUpgrade
  
 on:
   push:
-    tags:
-      - 'v*.*.*'
+  #   tags:
+  #     - 'v*.*.*'
  
 jobs:
   sync-version-tags:
