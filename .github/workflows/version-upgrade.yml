@@ -87,7 +87,7 @@ jobs:
         with:
           github-token: ${{ secrets.BOT_TOKEN }}
           script: |
-            console.log(`[$(new Date().toISOString())] Creating PR for branch ${{ steps.set-branch.outputs.branch }}...`);
+            console.log(`[${new Date().toISOString()}] Creating PR for branch ${{ steps.set-branch.outputs.branch }}...`);
             const { data: pr } = await github.rest.pulls.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -97,14 +97,8 @@ jobs:
               base: '${{ env.BASE_BRANCH }}',
               draft: false
             });
-            await github.rest.pulls.requestReviewers({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: pr.number,
-              reviewers: ['bd-SrinathAkkem']
-            });
             core.setOutput('pr_number', pr.number);
-            console.log(`[$(new Date().toISOString())] Created PR #${pr.number}`);
+            console.log(`[${new Date().toISOString()}] Created PR #${pr.number}`);
 
       - name: Clean Up Workspace
         if: always()
@@ -125,9 +119,11 @@ jobs:
         with:
           github-token: ${{ secrets.BOT_TOKEN }}
           script: |
-            console.log(`[$(new Date().toISOString())] Waiting for approval on PR #${{ needs.bump_and_pr.outputs.pr_number }}...`);
+            console.log(`[${new Date().toISOString()}] Waiting for approval on PR #${{ needs.bump_and_pr.outputs.pr_number }}...`);
             const prNumber = ${{ needs.bump_and_pr.outputs.pr_number }};
             const maxAttempts = 120;
+            const delay = 30000;
+
             for (let i = 0; i < maxAttempts; i++) {
               const { data: reviews } = await github.rest.pulls.listReviews({
                 owner: context.repo.owner,
@@ -136,13 +132,15 @@ jobs:
               });
               const approved = reviews.some(review => review.state === 'APPROVED');
               if (approved) {
-                console.log(`[$(new Date().toISOString())] PR #${{ needs.bump_and_pr.outputs.pr_number }} approved`);
+                console.log(`[${new Date().toISOString()}] PR #${{ needs.bump_and_pr.outputs.pr_number }} approved`);
                 return;
               }
-              console.log(`[$(new Date().toISOString())] Attempt ${i+1}/${maxAttempts}: No approval yet`);
-              await new Promise(resolve => setTimeout(resolve, 30000));
+
+              console.log(`[${new Date().toISOString()}] Attempt ${i + 1}/${maxAttempts}: No approval yet.`);
+              await new Promise(resolve => setTimeout(resolve, delay));
             }
-            core.setFailed('PR was not approved within 1 hour');
+
+            core.setFailed(`[${new Date().toISOString()}] PR #${prNumber} was not approved within the time limit.`);
 
   merge_and_tag:
     if: github.event_name == 'workflow_dispatch'
@@ -169,7 +167,7 @@ jobs:
         with:
           github-token: ${{ secrets.BOT_TOKEN }}
           script: |
-            console.log(`[$(new Date().toISOString())] Checking for merge conflicts on PR #${{ needs.bump_and_pr.outputs.pr_number }}...`);
+            console.log(`[${new Date().toISOString()}] Checking for merge conflicts on PR #${{ needs.bump_and_pr.outputs.pr_number }}...`);
             const { data: pr } = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -178,21 +176,21 @@ jobs:
             if (pr.mergeable_state === 'dirty') {
               core.setFailed('Merge conflict detected. Please resolve manually.');
             } else {
-              console.log(`[$(new Date().toISOString())] No merge conflicts detected`);
+              console.log(`[${new Date().toISOString()}] No merge conflicts detected`);
 
       - name: Merge Pull Request
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.BOT_TOKEN }}
           script: |
-            console.log(`[$(new Date().toISOString())] Merging PR #${{ needs.bump_and_pr.outputs.pr_number }}...`);
+            console.log(`[${new Date().toISOString()}] Merging PR #${{ needs.bump_and_pr.outputs.pr_number }}...`);
             await github.rest.pulls.merge({
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: ${{ needs.bump_and_pr.outputs.pr_number }},
               merge_method: 'merge'
             });
-            console.log(`[$(new Date().toISOString())] PR #${{ needs.bump_and_pr.outputs.pr_number }} merged successfully`);
+            console.log(`[${new Date().toISOString()}] PR #${{ needs.bump_and_pr.outputs.pr_number }} merged successfully`);
 
       - name: Pull Latest Main Branch
         run: |
@@ -293,7 +291,7 @@ jobs:
         with:
           github-token: ${{ secrets.BOT_TOKEN }}
           script: |
-            console.log(`[$(new Date().toISOString())] Sending Teams notification...`);
+            console.log(`[${new Date().toISOString()}] Sending Teams notification...`);
             const teamsWebhook = '${{ secrets.TEAMS_WEBHOOK_URL }}';
             const isSuccess = ${{ job.status == 'success' }};
             const title = isSuccess ? "Release Workflow Succeeded" : "Release Workflow Failed";
@@ -330,4 +328,4 @@ jobs:
             if (!response.ok) {
               core.setFailed(`Failed to send Teams notification: ${response.statusText}`);
             } else {
-              console.log(`[$(new Date().toISOString())] Teams notification sent successfully`);
+              console.log(`[${new Date().toISOString()}] Teams notification sent successfully`);
