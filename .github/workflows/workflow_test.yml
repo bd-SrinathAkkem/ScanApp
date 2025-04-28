@@ -26,7 +26,7 @@ jobs:
           script: |
             console.log(`[${new Date().toISOString()}] Sending Teams notification...`);
             const teamsWebhook = '${{ secrets.TEAMS_WEBHOOK_URL }}';
-            const isSuccess = true
+            const isSuccess = true;
             const title = isSuccess ? "Release Workflow Succeeded" : "Release Workflow Failed";
             const facts = isSuccess
               ? [
