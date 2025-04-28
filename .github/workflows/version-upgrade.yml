@@ -87,7 +87,10 @@ jobs:
         with:
           github-token: ${{ secrets.BOT_TOKEN }}
           script: |
-            console.log("[$(new Date().toISOString())] Creating PR for branch ${{ steps.set-branch.outputs.branch }}...");
+            const reviewer = 'bd-SrinathAkkem';
+            const prAuthor = context.actor;
+
+            console.log(`Creating PR for branch ${{ steps.set-branch.outputs.branch }}...`);
             const { data: pr } = await github.rest.pulls.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -97,14 +100,21 @@ jobs:
               base: '${{ env.BASE_BRANCH }}',
               draft: false
             });
-            await github.rest.pulls.requestReviewers({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: pr.number,
-              reviewers: ['bd-SrinathAkkem']
-            });
+
+            if (reviewer !== prAuthor) {
+              console.log(`Requesting review from ${reviewer}...`);
+              await github.rest.pulls.requestReviewers({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr.number,
+                reviewers: [reviewer]
+              });
+            } else {
+              console.log(`Skipping review request as the reviewer (${reviewer}) is the PR author (${prAuthor}).`);
+            }
+
             core.setOutput('pr_number', pr.number);
-            console.log(`[$(new Date().toISOString())] Created PR #${pr.number}`);
+            console.log(`Created PR #${pr.number}`);
 
       - name: Clean Up Workspace
         if: always()
@@ -178,7 +188,7 @@ jobs:
             if (pr.mergeable_state === 'dirty') {
               core.setFailed('Merge conflict detected. Please resolve manually.');
             } else {
-              console.log("[$(new Date().toISOString())] No merge conflicts detected");
+              console.log("[$(new Date().toISOString())] No merge conflicts detected")
 
       - name: Merge Pull Request
         uses: actions/github-script@v7
@@ -192,7 +202,7 @@ jobs:
               pull_number: ${{ needs.bump_and_pr.outputs.pr_number }},
               merge_method: 'merge'
             });
-            console.log("[$(new Date().toISOString())] PR #${{ needs.bump_and_pr.outputs.pr_number }} merged successfully");
+            console.log("[$(new Date().toISOString())] PR #${{ needs.bump_and_pr.outputs.pr_number }} merged successfully")
 
       - name: Pull Latest Main Branch
         run: |
