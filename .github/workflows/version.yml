@@ -1,0 +1,77 @@
+name: VersionUpgrade
+ 
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+ 
+jobs:
+  sync-version-tags:
+    name: Create Release Tag
+    runs-on: ubuntu-latest
+ 
+    env:
+      ENABLE_MAJOR_TAG: true
+      ENABLE_LATEST_TAG: true
+      ENABLE_RELEASE: true
+ 
+    permissions:
+      contents: write
+      id-token: write
+ 
+    steps:
+      # - name: Checkout repository
+        # uses: actions/checkout@v4
+ 
+      - name: Configure Git
+        run: |
+          git config user.name "Actions"
+          git config user.email "actions@github.com"
+ 
+      # - name: Extract and validate version
+      #   id: version
+      #   run: |
+      #     TAG="${GITHUB_REF#refs/tags/}"
+      #     echo "Processing pushed tag: $TAG"
+ 
+      #     if [[ "$TAG" =~ ^v([0-9]+)\.[0-9]+\.[0-9]+$ ]]; then
+      #       MAJOR_TAG="v${BASH_REMATCH[1]}"
+      #       echo "tag=$TAG" >> $GITHUB_OUTPUT
+      #       echo "major=$MAJOR_TAG" >> $GITHUB_OUTPUT
+      #       echo "Valid semver detected: $TAG"
+      #     else
+      #       echo "Invalid tag format '$TAG'. Use vX.Y.Z"
+      #       exit 1
+      #     fi
+ 
+      # - name: Sync Tags
+      #   run: |
+      #     git fetch --tags
+      #     TAG="${{ steps.version.outputs.tag }}"
+      #     MAJOR="${{ steps.version.outputs.major }}"
+ 
+      #     if [[ "${ENABLE_MAJOR_TAG}" == "true" ]]; then
+      #       echo "Updating major tag '$MAJOR' -> $TAG"
+      #       git tag -f "$MAJOR" "$TAG"
+      #       git push origin "$MAJOR" --force
+      #       echo "'$MAJOR' tag updated"
+      #     else
+      #       echo "Major tag update skipped"
+      #     fi
+ 
+      #     if [[ "${ENABLE_LATEST_TAG}" == "true" ]]; then
+      #       echo "Updating 'latest' tag -> $TAG"
+      #       git tag -f latest "$TAG"
+      #       git push origin latest --force
+      #       echo "'latest' tag updated"
+      #     else
+      #       echo "Latest tag update skipped"
+      #     fi
+ 
+      # - name: Create GitHub Release
+      #   if: env.ENABLE_RELEASE == 'true'
+      #   uses: softprops/action-gh-release@v1
+      #   with:
+      #     tag_name: ${{ steps.version.outputs.tag }}
+      #     name: ${{ steps.version.outputs.tag }}
+      #     generate_release_notes: true
