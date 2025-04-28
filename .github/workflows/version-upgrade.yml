@@ -1,122 +1,402 @@
-name: VersionRelease
- 
+# Workflow to automate version bumping, PR creation, approval, merging, tag creation, tag synchronization, and cleanup
+# Triggered manually with a TAG_NAME input (e.g., v1.0.0) or on push of tags matching v*.*.*
+name: Release and Tag Synchronization
+
 on:
   workflow_dispatch:
     inputs:
-      tag_name:
-        description: 'Tag to release'
+      TAG_NAME:
+        description: 'Bump Version (e.g., v1.0.0)'
         required: true
-      sync_major:
-        description: 'Update major version tag'
-        default: 'true'
-        required: true
-      sync_latest:
-        description: 'Update latest tag'
-        default: 'true'
-        required: true
-      github_release:
-        description: 'Create GitHub release'
-        default: 'false'
+      ENABLE_MAJOR_TAG:
+        description: 'Enable updating the major version tag'
         required: false
- 
-permissions:
-  contents: write
-  id-token: write
-  
+        default: 'true'
+      ENABLE_LATEST_TAG:
+        description: 'Enable updating the latest tag'
+        required: false
+        default: 'true'
+      ENABLE_RELEASE:
+        description: 'Enable GitHub release creation'
+        required: false
+        default: 'false'
+  push:
+    tags:
+      - 'v*.*.*'
+
 env:
-  NODE_VERSION: 18.x
- 
+  BRANCH_PREFIX: release
+  BASE_BRANCH: main
+
+# Default permissions for the workflow
+permissions:
+  contents: read
+
 jobs:
-  build:
-    name: Build
-    runs-on: [self-hosted]
- 
+  # Job to bump version, create branch, and commit changes
+  bump_version:
+    if: github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
+    runs-on:
+      - self-hosted
+      - ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20.x]
     outputs:
-      tag: ${{ steps.out.outputs.tag }}
- 
+      branch_name: ${{ steps.set-branch.outputs.branch }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
- 
-      - name: Setup Node.js environment
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Validate TAG_NAME
+        run: |
+          ::group::Validate TAG_NAME
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Validating TAG_NAME: ${{ github.event.inputs.TAG_NAME }}"
+          if ! echo "${{ github.event.inputs.TAG_NAME }}" | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' ; then
+            ::error::Invalid TAG_NAME format. Must follow semantic versioning (e.g., v1.0.0)
+            exit 1
+          fi
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] TAG_NAME is valid"
+          ::endgroup::
+
+      - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: ${{ env.NODE_VERSION }}
- 
+          node-version: ${{ matrix.node-version }}
+
       - name: Configure Git
         run: |
-          git config user.name "Actions"
-          git config user.email "actions@github.com"
- 
-      - name: Tag
-        id: out
-        run: echo "tag=${{ github.event.inputs.tag_name }}" >> $GITHUB_OUTPUT
- 
-      - name: Version
+          ::group::Configure Git
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Configuring Git user..."
+          git config user.name "GitHub Actions Bot"
+          git config user.email "bot@example.com"
+          ::debug::Git config user.name: $(git config user.name)
+          ::debug::Git config user.email: $(git config user.email)
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Git configuration complete"
+          ::endgroup::
+
+      - name: Install Dependencies and Bump Version
         run: |
-          npm ci
-          npx npe version "${{ github.event.inputs.tag_name }}"
- 
-      - name: Build
-        run: npm run build
- 
-      - name: Commit
+          ::group::Install Dependencies and Bump Version
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Installing dependencies..."
+          npm ci || { ::error::npm ci failed; exit 1; }
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Bumping version to ${{ github.event.inputs.TAG_NAME }}..."
+          npm version ${{ github.event.inputs.TAG_NAME }} --no-git-tag-version || { ::error::npm version failed; exit 1; }
+          git add package.json package-lock.json
+          git commit -m "Bump version to ${{ github.event.inputs.TAG_NAME }}"
+          ::debug::Git status: $(git status -s)
+          ::debug::Latest commit: $(git log -1 --oneline)
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Version bumped and committed"
+          ::endgroup::
+
+      - name: Create Branch
+        id: set-branch
         run: |
-          git add .
-          git commit -m "Release ${{ github.event.inputs.tag_name }}"
-          git tag "${{ github.event.inputs.tag_name }}"
-          git push origin main
-          git push origin "${{ github.event.inputs.tag_name }}"
- 
-      - name: Upload a Build Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/*.js*
- 
-  tags:
-    name: Tags
-    runs-on: [self-hosted]
-    needs: build
-    if: ${{ github.event.inputs.sync_major == 'true' || github.event.inputs.sync_latest == 'true' }}
- 
+          ::group::Create Branch
+          BRANCH_NAME=${{ env.BRANCH_PREFIX }}_${{ github.event.inputs.TAG_NAME }}
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Creating branch: $BRANCH_NAME"
+          echo "branch=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          git checkout -b $BRANCH_NAME
+          git push origin $BRANCH_NAME || { ::error::git push failed; exit 1; }
+          ::debug::Current branch: $(git rev-parse --abbrev-ref HEAD)
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Branch $BRANCH_NAME created and pushed"
+          ::endgroup::
+
+  create_pr:
+    if: github.event_name == 'workflow_dispatch'
+    needs: bump_version
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on:
+      - self-hosted
+      - ubuntu-latest
+    outputs:
+      pr_number: ${{ steps.create-pr.outputs.pr_number }}
     steps:
-      - name: Checkout Source
-        uses: actions/checkout@v3
- 
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Create Pull Request
+        id: create-pr
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.BOT_TOKEN }}
+          script: |
+            console.log("[$(new Date().toISOString())] Creating PR for branch ${{ needs.bump_version.outputs.branch_name }}...");
+            const { data: pr } = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Release ${{ github.event.inputs.TAG_NAME }}`,
+              body: `Automated release for version ${{ github.event.inputs.TAG_NAME }}`,
+              head: `${{ needs.bump_version.outputs.branch_name }}`,
+              base: '${{ env.BASE_BRANCH }}',
+              draft: false
+            });
+            await github.rest.pulls.requestReviewers({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              reviewers: ['bd-SrinathAkkem']
+            });
+            core.setOutput('pr_number', pr.number);
+            console.log(`[$(new Date().toISOString())] Created PR #${pr.number}`);
+
+  wait_for_approval:
+    if: github.event_name == 'workflow_dispatch'
+    needs: create_pr
+    permissions:
+      pull-requests: read
+    runs-on:
+      - self-hosted
+      - ubuntu-latest
+    steps:
+      - name: Wait for PR Approval
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.BOT_TOKEN }}
+          script: |
+            console.log("[$(new Date().toISOString())] Waiting for approval on PR #${{ needs.create_pr.outputs.pr_number }}...");
+            const prNumber = ${{ needs.create_pr.outputs.pr_number }};
+            const maxAttempts = 120;
+            for (let i = 0; i < maxAttempts; i++) {
+              const { data: reviews } = await github.rest.pulls.listReviews({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber
+              });
+              const approved = reviews.some(review => review.state === 'APPROVED');
+              if (approved) {
+                console.log("[$(new Date().toISOString())] PR #${{ needs.create_pr.outputs.pr_number }} approved");
+                return;
+              }
+              console.log("[$(new Date().toISOString())] Attempt ${i+1}/${maxAttempts}: No approval yet");
+              await new Promise(resolve => setTimeout(resolve, 30000)); // Wait 30s
+            }
+            core.setFailed('PR was not approved within 1 hour');
+            console.log("[$(new Date().toISOString())] ::error::PR #${{ needs.create_pr.outputs.pr_number }} was not approved within 1 hour");
+
+  merge_pr:
+    if: github.event_name == 'workflow_dispatch'
+    needs: wait_for_approval
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on:
+      - self-hosted
+      - ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Check for Merge Conflicts
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.BOT_TOKEN }}
+          script: |
+            console.log("[$(new Date().toISOString())] Checking for merge conflicts on PR #${{ needs.create_pr.outputs.pr_number }}...");
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: ${{ needs.create_pr.outputs.pr_number }}
+            });
+            if (pr.mergeable_state === 'dirty') {
+              core.setFailed('Merge conflict detected. Please resolve manually.');
+              console.log("[$(new Date().toISOString())] ::error::Merge conflict detected on PR #${{ needs.create_pr.outputs.pr_number }}");
+            } else {
+              console.log("[$(new Date().toISOString())] No merge conflicts detected on PR #${{ needs.create_pr.outputs.pr_number }}");
+            }
+
+      - name: Merge Pull Request
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.BOT_TOKEN }}
+          script: |
+            console.log("[$(new Date().toISOString())] Merging PR #${{ needs.create_pr.outputs.pr_number }}...");
+            await github.rest.pulls.merge({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: ${{ needs.create_pr.outputs.pr_number }},
+              merge_method: 'merge'
+            });
+            console.log("[$(new Date().toISOString())] PR #${{ needs.create_pr.outputs.pr_number }} merged successfully");
+
+      - name: Delete Branch
+        if: always()
+        run: |
+          ::group::Delete Branch
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Deleting branch ${{ needs.bump_version.outputs.branch_name }}..."
+          git push origin --delete ${{ needs.bump_version.outputs.branch_name }} || echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Branch already deleted or does not exist"
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Branch deletion attempted"
+          ::endgroup::
+
+  tag_release:
+    if: github.event_name == 'workflow_dispatch'
+    needs: merge_pr
+    permissions:
+      contents: write
+    runs-on:
+      - self-hosted
+      - ubuntu-latest
+    steps:
+      - name: Checkout Main Branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASE_BRANCH }}
+
+      - name: Create and Push Git Tag
+        run: |
+          ::group::Create and Push Git Tag
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Creating tag ${{ github.event.inputs.TAG_NAME }}..."
+          git tag ${{ github.event.inputs.TAG_NAME }}
+          git push origin ${{ github.event.inputs.TAG_NAME }} || { ::error::git push tag failed; exit 1; }
+          ::debug::Tags: $(git tag --list)
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Tag ${{ github.event.inputs.TAG_NAME }} created and pushed successfully"
+          ::endgroup::
+
+  sync_tags:
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+      id-token: write
+    runs-on:
+      - self-hosted
+      - ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure Git
+        run: |
+          ::group::Configure Git
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Configuring Git user..."
+          git config user.name "GitHub Actions Bot"
+          git config user.email "bot@example.com"
+          ::debug::Git config user.name: $(git config user.name)
+          ::debug::Git config user.email: $(git config user.email)
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Git configuration complete"
+          ::endgroup::
+
+      - name: Extract and Validate Version
+        id: version
+        run: |
+          ::group::Extract and Validate Version
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Processing pushed tag: $TAG"
+          if [[ "$TAG" =~ ^v([0-9]+)\.[0-9]+\.[0-9]+$ ]]; then
+            MAJOR_TAG="v${BASH_REMATCH[1]}"
+            echo "tag=$TAG" >> $GITHUB_OUTPUT
+            echo "major=$MAJOR_TAG" >> $GITHUB_OUTPUT
+            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Valid semver detected: $TAG"
+          else
+            ::error::Invalid tag format '$TAG'. Use vX.Y.Z
+            exit 1
+          fi
+          ::endgroup::
+
       - name: Sync Tags
         run: |
-          TAG="${{ needs.build.outputs.tag }}"
-          [[ "$TAG" =~ ^v([0-9]+)\.[0-9]+\.[0-9]+$ ]] || exit 1
-          MAJOR="v${BASH_REMATCH[1]}"
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "major=$MAJOR" >> $GITHUB_OUTPUT
-          echo "Valid semver detected: $TAG"
+          ::group::Sync Tags
           git fetch --tags
-          if [[ "${{ github.event.inputs.sync_major }}" == "true" ]]; then
-            echo "Updating major tag '$MAJOR' -> $TAG"
+          TAG="${{ steps.version.outputs.tag }}"
+          MAJOR="${{ steps.version.outputs.major }}"
+          if [[ "${{ env.ENABLE_MAJOR_TAG }}" == "true" ]]; then
+            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Updating major tag '$MAJOR' -> $TAG"
             git tag -f "$MAJOR" "$TAG"
-            git push origin "$MAJOR" --force
-            echo "'$MAJOR' tag updated"
+            git push origin "$MAJOR" --force || { ::error::Failed to push major tag; exit 1; }
+            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] '$MAJOR' tag updated"
+          else
+            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Major tag update skipped"
           fi
-          if [[ "${{ github.event.inputs.sync_latest }}" == "true" ]]; then
-            echo "Updating 'latest' tag -> $TAG"
-            git tag -f latest "$TAG"
-            git push origin latest --force
-            echo "'latest' tag updated"
+          if [[ "${{ env.ENABLE_LATEST_TAG }}" == "true" ]]; then
+            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Updating 'latest' tag -> $TAG"
+            git tag -f "latest" "$TAG"
+            git push origin "latest" --force || { ::error::Failed to push latest tag; exit 1; }
+            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] 'latest' tag updated"
+          else
+            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Latest tag update skipped"
           fi
- 
-  release:
-    name: Create Release
-    runs-on: [self-hosted]
-    needs: build
-    if: ${{ github.event.inputs.github_release == 'true' }}
- 
+          ::debug::Tags after sync: $(git tag --list)
+          ::endgroup::
+
+      # - name: Create GitHub Release
+      #   if: env.ENABLE_RELEASE == 'true'
+      #   uses: softprops/action-gh-release@v2
+      #   with:
+      #     tag_name: ${{ steps.version.outputs.tag }}
+      #     name: ${{ steps.version.outputs.tag }}
+      #     generate_release_notes: true
+
+  cleanup:
+    needs: [bump_version, create_pr, wait_for_approval, merge_pr, tag_release, sync_tags]
+    permissions:
+      contents: write
+    runs-on:
+      - self-hosted
+      - ubuntu-latest
+    if: always()
     steps:
-      - name: Publish
-        uses: softprops/action-gh-release@v1
+      - name: Clean Up Release Branch
+        if: github.event_name == 'workflow_dispatch' && needs.bump_version.outputs.branch_name != ''
+        run: |
+          ::group::Clean Up Release Branch
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Checking for release branch: ${{ needs.bump_version.outputs.branch_name }}..."
+          git push origin --delete ${{ needs.bump_version.outputs.branch_name }} || echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Branch already deleted or does not exist"
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Branch cleanup complete"
+          ::endgroup::
+
+  notify_teams:
+    needs: [bump_version, create_pr, wait_for_approval, merge_pr, tag_release, sync_tags, cleanup]
+    permissions:
+      contents: none
+    runs-on:
+      - self-hosted
+      - ubuntu-latest
+    steps:
+      - name: Send Teams Notification
+        uses: actions/github-script@v7
         with:
-          tag_name: ${{ needs.build.outputs.tag }}
-          name: ${{ needs.build.outputs.tag }}
-          generate_release_notes: true
- 
+          github-token: ${{ secrets.BOT_TOKEN }}
+          script: |
+            console.log("[$(new Date().toISOString())] Sending Teams notification...");
+            const teamsWebhook = '${{ secrets.TEAMS_WEBHOOK_URL }}';
+            const isSuccess = ${{ job.status == 'success' }};
+            const title = isSuccess ? "Release Workflow Succeeded" : "Release Workflow Failed";
+            const facts = isSuccess
+              ? [
+                  { "name": "Repository", "value": "${{ github.repository }}" },
+                  { "name": "Tag", "value": "${{ github.event.inputs.TAG_NAME || github.ref_name }}" }
+                ]
+              : [
+                  { "name": "Repository", "value": "${{ github.repository }}" },
+                  { "name": "Tag", "value": "${{ github.event.inputs.TAG_NAME || github.ref_name }}" },
+                  { "name": "Run ID", "value": "${{ github.run_id }}" }
+                ];
+            const message = {
+              "@type": "MessageCard",
+              "@context": "http://schema.org/extensions",
+              "summary": title,
+              "sections": [{
+                "activityTitle": title,
+                "facts": facts,
+                "markdown": true
+              }],
+              "potentialAction": [{
+                "@type": "OpenUri",
+                "name": isSuccess ? "View Release" : "View Run",
+                "targets": [{ "os": "default", "uri": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" }]
+              }]
+            };
+            const response = await fetch(teamsWebhook, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(message)
+            });
+            if (!response.ok) {
+              core.setFailed(`Failed to send Teams notification: ${response.statusText}`);
+              console.log("[$(new Date().toISOString())] ::error::Failed to send Teams notification: ${response.statusText}");
+            } else {
+              console.log("[$(new Date().toISOString())] Teams notification sent successfully");
+            }
