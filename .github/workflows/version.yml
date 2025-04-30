@@ -207,7 +207,35 @@ jobs:
           git tag ${{ needs.bump_and_pr.outputs.output_next_version_tag }}
           git push origin ${{ needs.bump_and_pr.outputs.output_next_version_tag }} || { echo "::error::Tag push failed"; exit 1; }
           git push origin --delete ${{ needs.bump_and_pr.outputs.output_release_branch }} || true
-          
+      
+      - name: Create Draft Release
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.BOT_TOKEN }}
+          script: |
+            const octokit = github
+            const tag_name = '${{ needs.bump_and_pr.outputs.output_next_version_tag }}';
+            try {
+              await octokit.rest.repos.createRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag_name: tag_name,
+                name: `Release ${tag_name}`,
+                body: `Automated release for ${tag_name}`,
+                draft: true,
+                prerelease: false
+              });
+              console.log(`Draft release created for ${tag_name}`);
+            } catch (error) {
+              await octokit.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: ${{ needs.bump_and_pr.outputs.output_pr_number }},
+                body: `Failed to create draft release for ${tag_name}: ${error.message}`
+              });
+              core.setFailed(`Draft release creation failed: ${error.message}`);
+            }  
+      
       - name: Clean Workspace
         if: always()
         run: rm -rf $GITHUB_WORKSPACE/* $GITHUB_WORKSPACE/.*
