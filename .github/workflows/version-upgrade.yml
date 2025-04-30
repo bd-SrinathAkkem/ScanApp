@@ -86,6 +86,7 @@ jobs:
           git commit -m "Bump version to $next_version_tag"
           release_branch=${{ env.RELEASE_BRANCH_PREFIX }}_${next_version_tag}
           git checkout -b "$release_branch"
+          git pull origin "$release_branch" --rebase || true
           git push origin "$release_branch" || { echo "::error::git push failed"; exit 1; }
           echo "release_branch=$release_branch" >> $GITHUB_OUTPUT
 
