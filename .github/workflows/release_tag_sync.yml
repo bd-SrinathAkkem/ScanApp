@@ -48,14 +48,12 @@ jobs:
         id: validateTag
         run: |          
           echo "${{ env.LOG_PREFIX }} Validating version tag: ${{ github.event.inputs.versionTag }}"
-          IVERSION_TAG="${{ github.event.inputs.versionTag }}"
-          if [[ "$IVERSION_TAG" =~ ^v([0-9]+)\.[0-9]+\.[0-9]+$ ]]; then
-            VERSION_TAG="${IVERSION_TAG#v}"
-          else
-            echo "${{ env.LOG_PREFIX }} ::error::Invalid version tag format. Expected vX.Y.Z, got $IVERSION_TAG"
-            exit 1
-          fi
+          VERSION_TAG="${{ github.event.inputs.versionTag }}"
+          [[ "$VERSION_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "${{ env.LOG_PREFIX }} ::error::Invalid version tag format. Expected vX.Y.Z, got $VERSION_TAG"; exit 1; }
+          VERSION_TAG="${VERSION_TAG#v}"
+          echo "${{ env.LOG_PREFIX }} Extracted version tag: $VERSION_TAG"
           IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION_TAG"
+          echo "${{ env.LOG_PREFIX }} Major: $MAJOR, Minor: $MINOR, Patch: $PATCH"
           
           git fetch --tags
           MATCHING_TAGS=$(git tag | grep -E "^v$MAJOR\.$MINOR\.[0-9]+$" | sort -V)
@@ -68,7 +66,16 @@ jobs:
             NEXT_VERSION_TAG="v$((MAJOR + 1)).0.0"
           fi
           
+            echo "${{ env.LOG_PREFIX }} Next version tag candidate: $NEXT_VERSION_TAG"
+          
+          MAX_ATTEMPTS=100
+          attempt=0
           while git tag | grep -q "^$NEXT_VERSION_TAG$"; do
+            attempt=$((attempt + 1))
+            if [ "$attempt" -ge "$MAX_ATTEMPTS" ]; then
+              echo "${{ env.LOG_PREFIX }} ::error::Exceeded maximum attempts to find a unique version tag"
+              exit 1
+            fi
             IFS='.' read -r _ MAJOR MINOR PATCH <<< "${NEXT_VERSION_TAG#v}"
             [ "$PATCH" -lt 9 ] && NEXT_VERSION_TAG="v$MAJOR.$MINOR.$((PATCH + 1))" || \
             [ "$MINOR" -lt 9 ] && NEXT_VERSION_TAG="v$MAJOR.$((MINOR + 1)).0" || \
