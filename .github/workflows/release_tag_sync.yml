@@ -44,26 +44,36 @@ jobs:
       - name: Validate and Increment Version Tag
         id: validateTag
         run: |
+          echo "${{ env.LOG_PREFIX }} Validating version tag: ${{ github.event.inputs.versionTag }}"
           VERSION_TAG="${{ github.event.inputs.versionTag }}"
-          [[ "$VERSION_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "${{ env.LOG_PREFIX }} ::error::Invalid tag format: $VERSION_TAG"; exit 1; }
+          [[ "$VERSION_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "${{ env.LOG_PREFIX }} ::error::Invalid version tag format. Expected vX.Y.Z, got $VERSION_TAG"; exit 1; }
           VERSION_TAG="${VERSION_TAG#v}"
-          
-          [[ "$VERSION_TAG" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || { echo "${{ env.LOG_PREFIX }} ::error::Failed to parse tag: $VERSION_TAG"; exit 1; }
-          MAJOR="${BASH_REMATCH[1]}" MINOR="${BASH_REMATCH[2]}" PATCH="${BASH_REMATCH[3]}"
-          
-          increment_version() {
-            local major=$1 minor=$2 patch=$3
-            [ "$patch" -lt 9 ] && echo "v$major.$minor.$((patch + 1))" || \
-            [ "$minor" -lt 9 ] && echo "v$major.$((minor + 1)).0" || \
-            echo "v$((major + 1)).0.0"
-          }
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION_TAG"
           
           git fetch --tags
-          NEXT_VERSION_TAG="v$MAJOR.$MINOR.$PATCH"
           
+          MATCHING_TAGS=$(git tag | grep -E "^v$MAJOR\.$MINOR\.[0-9]+$" | sort -V)
+          if [ -z "$MATCHING_TAGS" ]; then
+            NEXT_VERSION_TAG="v$MAJOR.$MINOR.$PATCH"
+          else
+            HIGHEST_PATCH=$(echo "$MATCHING_TAGS" | tail -n 1 | cut -d'.' -f3)
+            if [ "$HIGHEST_PATCH" -lt 9 ]; then
+              NEXT_VERSION_TAG="v$MAJOR.$MINOR.$((HIGHEST_PATCH + 1))"
+            elif [ "$MINOR" -lt 9 ]; then
+              NEXT_VERSION_TAG="v$MAJOR.$((MINOR + 1)).0"
+            else
+              NEXT_VERSION_TAG="v$((MAJOR + 1)).0.0"
+            fi
+          fi
           while git tag | grep -q "^$NEXT_VERSION_TAG$"; do
-            [[ "$NEXT_VERSION_TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || { echo "${{ env.LOG_PREFIX }} ::error::Failed to parse: $NEXT_VERSION_TAG"; exit 1; }
-            NEXT_VERSION_TAG=$(increment_version "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}")
+            IFS='.' read -r _ MAJOR MINOR PATCH <<< "${NEXT_VERSION_TAG#v}"
+            if [ "$PATCH" -lt 9 ]; then
+              NEXT_VERSION_TAG="v$MAJOR.$MINOR.$((PATCH + 1))"
+            elif [ "$MINOR" -lt 9 ]; then
+              NEXT_VERSION_TAG="v$MAJOR.$((MINOR + 1)).0"
+            else
+              NEXT_VERSION_TAG="v$((MAJOR + 1)).0.0"
+            fi
           done
           
           echo "${{ env.LOG_PREFIX }} Next version tag: $NEXT_VERSION_TAG"
