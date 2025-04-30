@@ -63,18 +63,21 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: 20
-
+          
       - name: Bump Version and Create Branch
         id: create-branch
         run: |
           git config user.name "GitHub Actions Bot"
           git config user.email "bot@example.com"
           npm ci || { echo "::error::npm ci failed"; exit 1; }
-          npm version "${{ steps.validate-tag.outputs.next_version_tag#v }}" --no-git-tag-version || { echo "::error::npm version failed"; exit 1; }
+          next_version_tag="${{ steps.validate-tag.outputs.next_version_tag }}"
+          stripped_version_tag="${next_version_tag#v}"
+          npm version "$stripped_version_tag" --no-git-tag-version || { echo "::error::npm version failed"; exit 1; }
           git add package.json package-lock.json
-          git commit -m "Bump version to ${{ steps.validate-tag.outputs.next_version_tag }}"
-          release_branch=${{ env.RELEASE_BRANCH_PREFIX }}_${{ steps.validate-tag.outputs.next_version_tag }}
+          git commit -m "Bump version to $next_version_tag"
+          release_branch=${{ env.RELEASE_BRANCH_PREFIX }}_${next_version_tag}
           git checkout -b "$release_branch"
+          git pull origin "$release_branch" --rebase || true
           git push origin "$release_branch" || { echo "::error::git push failed"; exit 1; }
           echo "release_branch=$release_branch" >> $GITHUB_OUTPUT
 
