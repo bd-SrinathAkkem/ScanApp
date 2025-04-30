@@ -6,6 +6,7 @@ on:
       version_tag:
         description: 'Bump Version (e.g., v1.0.0)'
         required: true
+
 env:
   RELEASE_BRANCH_PREFIX: release
   BASE_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
@@ -69,15 +70,11 @@ jobs:
           git config user.name "GitHub Actions Bot"
           git config user.email "bot@example.com"
           npm ci || { echo "::error::npm ci failed"; exit 1; }
-          next_version_tag="${{ steps.validate-tag.outputs.next_version_tag }}"
-          stripped_version_tag="${next_version_tag#v}"
-          npm version "$stripped_version_tag" --no-git-tag-version || { echo "::error::npm version failed"; exit 1; }
+          npm version "${{ steps.validate-tag.outputs.next_version_tag#v }}" --no-git-tag-version || { echo "::error::npm version failed"; exit 1; }
           git add package.json package-lock.json
-          git commit -m "Bump version to $next_version_tag"
-          release_branch=${{ env.RELEASE_BRANCH_PREFIX }}_${next_version_tag}
+          git commit -m "Bump version to ${{ steps.validate-tag.outputs.next_version_tag }}"
+          release_branch=${{ env.RELEASE_BRANCH_PREFIX }}_${{ steps.validate-tag.outputs.next_version_tag }}
           git checkout -b "$release_branch"
-          git fetch --all
-          git pull origin "$release_branch" --rebase || true
           git push origin "$release_branch" || { echo "::error::git push failed"; exit 1; }
           echo "release_branch=$release_branch" >> $GITHUB_OUTPUT
 
@@ -88,7 +85,7 @@ jobs:
           github-token: ${{ secrets.BOT_TOKEN }}
           script: |
             const octokit = github;
-            const { data: pr } = await octokit.rest.pulls.create({
+            const { data: pr } = await octokit.pulls.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
               title: `Release ${{ steps.validate-tag.outputs.next_version_tag }}`,
@@ -121,27 +118,20 @@ jobs:
                 repo: context.repo.repo,
                 pull_number: pr_number
               });
-            
-              if (pr.merged) {
-                console.log(`PR #${pr_number} has already been merged manually.`);
+              if (pr.merged) return;
+              if (pr.state === 'closed' && !pr.merged) {
+                core.setFailed(`PR #${pr_number} was closed without merging.`);
                 return;
               }
-              
               const { data: reviews } = await github.rest.pulls.listReviews({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 pull_number: pr_number
               });
-              
-              if (reviews.some(review => review.state === 'APPROVED')) {
-                console.log(`PR #${pr_number} has been approved.`);
-                return;
-              }
-              
+              if (reviews.some(review => review.state === 'APPROVED')) return;
               await new Promise(resolve => setTimeout(resolve, 30000));
             }
-            
-            core.setFailed(`PR #${pr_number} not approved or merged within the time limit.`);
+            core.setFailed(`PR #${pr_number} not approved or merged within time limit.`);
 
   merge_and_tag:
     if: github.event_name == 'workflow_dispatch'
@@ -157,48 +147,51 @@ jobs:
           ref: ${{ env.BASE_BRANCH }}
           fetch-depth: 0
 
-      - name: Check if PR is Merged
-        id: check-merge
-        run: |
-          pr_number="${{ needs.bump_and_pr.outputs.output_pr_number }}"
-          response_code=$(curl -L \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${{ secrets.BOT_TOKEN }}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            ${{ github.api_url }}/repos/${{ github.repository }}/pulls/${pr_number}/merge)
-          if [[ "$response_code" == "204" ]]; then
-            echo "pr_merged=true" >> $GITHUB_ENV
-          elif [[ "$response_code" == "404" ]]; then
-            echo "pr_merged=false" >> $GITHUB_ENV
-          else
-            echo "::error::Unexpected response code: $response_code"
-            exit 1
-          fi
-
-      - name: Merge Pull Request
-        if: env.pr_merged == 'false'
-        run: |
-          pr_number=${{ needs.bump_and_pr.outputs.output_pr_number }}
-          response=$(curl -s -H "Authorization: Bearer ${{ secrets.BOT_TOKEN }}" \
-            "${{ github.api_url }}/repos/${{ github.repository }}/pulls/${pr_number}")
-          if [[ "$(echo "$response" | jq -r '.mergeable_state')" == "dirty" ]]; then
-            echo "::error::Merge conflict detected"
-            curl -s -H "Authorization: Bearer ${{ secrets.BOT_TOKEN }}" \
-              -X POST "${{ github.api_url }}/repos/${{ github.repository }}/issues/${pr_number}/comments" \
-              -d '{"body": "Merge conflict detected. Please resolve manually."}'
-            exit 1
-          fi
-          curl -s -H "Authorization: Bearer ${{ secrets.BOT_TOKEN }}" \
-            -X PUT "${{ github.api_url }}/repos/${{ github.repository }}/pulls/${pr_number}/merge" \
-            -d '{"merge_method": "merge"}' || { echo "::error::Merge failed"; exit 1; }
+      - name: Merge and Tag
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.BOT_TOKEN }}
+          script: |
+            const pr_number = ${{ needs.bump_and_pr.outputs.output_pr_number }};
+            const octokit = github;
+            const { data: pr } = await octokit.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr_number
+            });
+            if (pr.merged) {
+              console.log(`PR #${pr_number} already merged.`);
+            } else if (pr.state === 'closed') {
+              core.setFailed(`PR #${pr_number} was closed without merging.`);
+              return;
+            } else if (pr.mergeable_state === 'dirty') {
+              await octokit.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr_number,
+                body: 'Merge conflict detected. Please resolve manually.'
+              });
+              core.setFailed(`Merge conflict detected in PR #${pr_number}.`);
+              return;
+            } else {
+              await octokit.pulls.merge({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr_number,
+                merge_method: 'merge'
+              });
+            }
 
       - name: Tag and Push
         run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "bot@example.com"
           git pull origin ${{ env.BASE_BRANCH }}
           git tag ${{ needs.bump_and_pr.outputs.output_next_version_tag }}
           git push origin ${{ needs.bump_and_pr.outputs.output_next_version_tag }} || { echo "::error::Tag push failed"; exit 1; }
           git push origin --delete ${{ needs.bump_and_pr.outputs.output_release_branch }} || true
-
+          
       - name: Clean Workspace
         if: always()
         run: rm -rf $GITHUB_WORKSPACE/* $GITHUB_WORKSPACE/.*
+        
