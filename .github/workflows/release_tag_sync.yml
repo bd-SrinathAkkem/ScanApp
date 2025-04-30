@@ -46,46 +46,38 @@ jobs:
 
       - name: Validate and Increment Version Tag
         id: validateTag
-        run: |          
+        run: |
           echo "${{ env.LOG_PREFIX }} Validating version tag: ${{ github.event.inputs.versionTag }}"
           VERSION_TAG="${{ github.event.inputs.versionTag }}"
           [[ "$VERSION_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "${{ env.LOG_PREFIX }} ::error::Invalid version tag format. Expected vX.Y.Z, got $VERSION_TAG"; exit 1; }
           VERSION_TAG="${VERSION_TAG#v}"
-          echo "${{ env.LOG_PREFIX }} Extracted version tag: $VERSION_TAG"
           IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION_TAG"
-          echo "${{ env.LOG_PREFIX }} Major: $MAJOR, Minor: $MINOR, Patch: $PATCH"
-          
-          git fetch --tags
-          MATCHING_TAGS=$(git tag | grep -E "^v$MAJOR\.$MINOR\.[0-9]+$" | sort -V)
-          if [ -z "$MATCHING_TAGS" ]; then
-            NEXT_VERSION_TAG="v$MAJOR.$MINOR.$PATCH"
-          else
-            HIGHEST_PATCH=$(echo "$MATCHING_TAGS" | tail -n 1 | cut -d'.' -f3)
-            [ "$HIGHEST_PATCH" -lt 9 ] && NEXT_VERSION_TAG="v$MAJOR.$MINOR.$((HIGHEST_PATCH + 1))" || \
-            [ "$MINOR" -lt 9 ] && NEXT_VERSION_TAG="v$MAJOR.$((MINOR + 1)).0" || \
-            NEXT_VERSION_TAG="v$((MAJOR + 1)).0.0"
-          fi
-          
-            echo "${{ env.LOG_PREFIX }} Next version tag candidate: $NEXT_VERSION_TAG"
-          
-          MAX_ATTEMPTS=100
-          attempt=0
-          while git tag | grep -q "^$NEXT_VERSION_TAG$"; do
-            attempt=$((attempt + 1))
-            if [ "$attempt" -ge "$MAX_ATTEMPTS" ]; then
-              echo "${{ env.LOG_PREFIX }} ::error::Exceeded maximum attempts to find a unique version tag"
-              exit 1
+
+          increment_version() {
+            local major=$1 minor=$2 patch=$3
+            if [ "$patch" -lt 9 ]; then
+              echo "v$major.$minor.$((patch + 1))"
+            elif [ "$minor" -lt 9 ]; then
+              echo "v$major.$((minor + 1)).0"
+            else
+              echo "v$((major + 1)).0.0"
             fi
+          }
+
+          git fetch --tags
+          NEXT_VERSION_TAG="v$MAJOR.$MINOR.$PATCH"
+
+          # Check if the input tag or subsequent increments exist
+          while git tag | grep -q "^$NEXT_VERSION_TAG$"; do
+            echo "${{ env.LOG_PREFIX }} Tag $NEXT_VERSION_TAG exists, incrementing"
             IFS='.' read -r _ MAJOR MINOR PATCH <<< "${NEXT_VERSION_TAG#v}"
-            [ "$PATCH" -lt 9 ] && NEXT_VERSION_TAG="v$MAJOR.$MINOR.$((PATCH + 1))" || \
-            [ "$MINOR" -lt 9 ] && NEXT_VERSION_TAG="v$MAJOR.$((MINOR + 1)).0" || \
-            NEXT_VERSION_TAG="v$((MAJOR + 1)).0.0"
+            NEXT_VERSION_TAG=$(increment_version "$MAJOR" "$MINOR" "$PATCH")
           done
-          
+
           echo "${{ env.LOG_PREFIX }} Next version tag: $NEXT_VERSION_TAG"
           echo "nextVersionTag=$NEXT_VERSION_TAG" >> $GITHUB_OUTPUT
         shell: bash
-
+      
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -286,3 +278,4 @@ jobs:
       - name: Clean Workspace
         if: always()
         run: rm -rf $GITHUB_WORKSPACE/*
+        
