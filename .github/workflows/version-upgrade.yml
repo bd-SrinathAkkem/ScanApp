@@ -3,25 +3,26 @@ name: Release and Tag Synchronization
 on:
   workflow_dispatch:
     inputs:
-      TAG_NAME:
+      version_tag:
         description: 'Bump Version (e.g., v1.0.0)'
         required: true
-      ENABLE_MAJOR_TAG:
-        description: 'Enable updating the major version tag'
-        required: false
+      enable_major_tag:
+        description: 'Enable major version tag update'
         default: 'true'
-      ENABLE_LATEST_TAG:
-        description: 'Enable updating the latest tag'
-        required: false
+      enable_latest_tag:
+        description: 'Enable latest tag update'
         default: 'true'
-
   push:
     tags:
       - 'v*.*.*'
 
 env:
-  BRANCH_PREFIX: release
-  BASE_BRANCH: main
+  RELEASE_BRANCH_PREFIX: release
+  BASE_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
+
+concurrency:
+  group: release-${{ github.event.inputs.version_tag || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -33,53 +34,58 @@ jobs:
       contents: write
       pull-requests: write
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
-      branch_name: ${{ steps.set-branch.outputs.branch }}
-      pr_number: ${{ steps.create-pr.outputs.pr_number }}
+      output_release_branch: ${{ steps.create-branch.outputs.release_branch }}
+      output_pr_number: ${{ steps.create-pr.outputs.pr_number }}
+      output_next_version_tag: ${{ steps.validate-tag.outputs.next_version_tag }}
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Validate TAG_NAME
+      - name: Validate and Increment Version Tag
+        id: validate-tag
         run: |
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Validating TAG_NAME: ${{ github.event.inputs.TAG_NAME }}"
-          if ! echo "${{ github.event.inputs.TAG_NAME }}" | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' ; then
-            echo "::error::Invalid TAG_NAME format. Must follow semantic versioning (e.g., v1.0.0)"
-            exit 1
+          input_version_tag="${{ github.event.inputs.version_tag }}"
+          [[ "$input_version_tag" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Invalid tag format. Use vX.Y.Z"; exit 1; }
+          input_version_tag="${input_version_tag#v}"
+          IFS='.' read -r major minor patch <<< "$input_version_tag"
+          git fetch --tags
+          matching_version_tags=$(git tag | grep -E "^v$major\.$minor\.[0-9]+$" | sort -V)
+          if [ -z "$matching_version_tags" ]; then
+            next_version_tag="v$major.$minor.$patch"
+          else
+            highest_patch=$(echo "$matching_version_tags" | tail -n 1 | cut -d'.' -f3)
+            if [ "$highest_patch" -lt 9 ]; then
+              next_version_tag="v$major.$minor.$((highest_patch + 1))"
+            elif [ "$minor" -lt 9 ]; then
+              next_version_tag="v$major.$((minor + 1)).0"
+            else
+              next_version_tag="v$((major + 1)).0.0"
+            fi
           fi
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] TAG_NAME is valid"
+          git tag | grep -q "^$next_version_tag$" && { echo "::error::Tag $next_version_tag already exists"; exit 1; }
+          echo "next_version_tag=$next_version_tag" >> $GITHUB_OUTPUT
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Next version tag: $next_version_tag"
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
+      - uses: actions/setup-node@v3
         with:
           node-version: 20
 
-      - name: Configure Git
+      - name: Bump Version and Create Branch
+        id: create-branch
         run: |
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Configuring Git user..."
           git config user.name "GitHub Actions Bot"
           git config user.email "bot@example.com"
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Git configuration complete"
-
-      - name: Install Dependencies and Bump Version
-        run: |
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Installing dependencies..."
           npm ci || { echo "::error::npm ci failed"; exit 1; }
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Bumping version to ${{ github.event.inputs.TAG_NAME }}..."
-          npm version ${{ github.event.inputs.TAG_NAME }} --no-git-tag-version || { echo "::error::npm version failed"; exit 1; }
+          npm version "${{ steps.validate-tag.outputs.next_version_tag#v }}" --no-git-tag-version || { echo "::error::npm version failed"; exit 1; }
           git add package.json package-lock.json
-          git commit -m "Bump version to ${{ github.event.inputs.TAG_NAME }}"
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Version bumped and committed"
-
-      - name: Create Branch
-        id: set-branch
-        run: |
-          BRANCH_NAME=${{ env.BRANCH_PREFIX }}_${{ github.event.inputs.TAG_NAME }}
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Creating branch: $BRANCH_NAME"
-          echo "branch=$BRANCH_NAME" >> $GITHUB_OUTPUT
-          git checkout -b $BRANCH_NAME
-          git push origin $BRANCH_NAME || { echo "::error::git push failed"; exit 1; }
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Branch $BRANCH_NAME created and pushed"
+          git commit -m "Bump version to ${{ steps.validate-tag.outputs.next_version_tag }}"
+          release_branch=${{ env.RELEASE_BRANCH_PREFIX }}_${{ steps.validate-tag.outputs.next_version_tag }}
+          git checkout -b "$release_branch"
+          git push origin "$release_branch" || { echo "::error::git push failed"; exit 1; }
+          echo "release_branch=$release_branch" >> $GITHUB_OUTPUT
 
       - name: Create Pull Request
         id: create-pr
@@ -87,60 +93,59 @@ jobs:
         with:
           github-token: ${{ secrets.BOT_TOKEN }}
           script: |
-            console.log(`[${new Date().toISOString()}] Creating PR for branch ${{ steps.set-branch.outputs.branch }}...`);
-            const { data: pr } = await github.rest.pulls.create({
+            const { retry } = require('@octokit/plugin-retry');
+            const Octokit = require('@octokit/rest').Octokit.plugin(retry);
+            const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
+            const { data: pr } = await octokit.pulls.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `Release ${{ github.event.inputs.TAG_NAME }}`,
-              body: `Automated release for version ${{ github.event.inputs.TAG_NAME }}`,
-              head: `${{ steps.set-branch.outputs.branch }}`,
-              base: '${{ env.BASE_BRANCH }}',
-              draft: false
+              title: `Release ${{ steps.validate-tag.outputs.next_version_tag }}`,
+              body: `Automated release for ${{ steps.validate-tag.outputs.next_version_tag }}`,
+              head: `${{ steps.create-branch.outputs.release_branch }}`,
+              base: '${{ env.BASE_BRANCH }}'
             });
             core.setOutput('pr_number', pr.number);
-            console.log(`[${new Date().toISOString()}] Created PR #${pr.number}`);
 
-      - name: Clean Up Workspace
+      - name: Notify on Failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.BOT_TOKEN }}
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ steps.create-pr.outputs.pr_number }},
+              body: 'Workflow failed in bump_and_pr job. Check logs.'
+            });
+
+      - name: Clean Workspace
         if: always()
-        run: |
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Cleaning up workspace..."
-          rm -rf $GITHUB_WORKSPACE/* $GITHUB_WORKSPACE/.*
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Workspace cleaned"
+        run: rm -rf $GITHUB_WORKSPACE/* $GITHUB_WORKSPACE/.*
 
   wait_for_approval:
     if: github.event_name == 'workflow_dispatch'
     needs: bump_and_pr
     permissions:
-      pull-requests: read
+      pull-requests: write
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
-      - name: Wait for PR Approval
-        uses: actions/github-script@v7
+      - uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.BOT_TOKEN }}
           script: |
-            console.log(`[${new Date().toISOString()}] Waiting for approval on PR #${{ needs.bump_and_pr.outputs.pr_number }}...`);
-            const prNumber = ${{ needs.bump_and_pr.outputs.pr_number }};
-            const maxAttempts = 120;
-            const delay = 30000;
-
-            for (let i = 0; i < maxAttempts; i++) {
+            const pr_number = ${{ needs.bump_and_pr.outputs.output_pr_number }};
+            for (let i = 0; i < 120; i++) {
               const { data: reviews } = await github.rest.pulls.listReviews({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                pull_number: prNumber
+                pull_number: pr_number
               });
-              const approved = reviews.some(review => review.state === 'APPROVED');
-              if (approved) {
-                console.log(`[${new Date().toISOString()}] PR #${{ needs.bump_and_pr.outputs.pr_number }} approved`);
-                return;
-              }
-
-              console.log(`[${new Date().toISOString()}] Attempt ${i + 1}/${maxAttempts}: No approval yet.`);
-              await new Promise(resolve => setTimeout(resolve, delay));
+              if (reviews.some(review => review.state === 'APPROVED')) return;
+              await new Promise(resolve => setTimeout(resolve, 30000));
             }
-
-            core.setFailed(`[${new Date().toISOString()}] PR #${prNumber} was not approved within the time limit.`);
+            core.setFailed(`PR #${pr_number} not approved within time limit.`);
 
   merge_and_tag:
     if: github.event_name == 'workflow_dispatch'
@@ -149,75 +154,38 @@ jobs:
       contents: write
       pull-requests: write
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: ${{ env.BASE_BRANCH }}
+          fetch-depth: 0
 
-      - name: Configure Git
+      - name: Merge and Tag
         run: |
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Configuring Git user..."
           git config user.name "GitHub Actions Bot"
           git config user.email "bot@example.com"
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Git configuration complete"
+          pr_number=${{ needs.bump_and_pr.outputs.output_pr_number }}
+          response=$(curl -s -H "Authorization: Bearer ${{ secrets.BOT_TOKEN }}" \
+            "${{ github.api_url }}/repos/${{ github.repository }}/pulls/$pr_number")
+          if [[ "$(echo "$response" | jq -r '.mergeable_state')" == "dirty" ]]; then
+            echo "::error::Merge conflict detected"
+            curl -s -H "Authorization: Bearer ${{ secrets.BOT_TOKEN }}" \
+              -X POST "${{ github.api_url }}/repos/${{ github.repository }}/issues/$pr_number/comments" \
+              -d '{"body": "Merge conflict detected. Please resolve manually."}'
+            exit 1
+          fi
+          curl -s -H "Authorization: Bearer ${{ secrets.BOT_TOKEN }}" \
+            -X PUT "${{ github.api_url }}/repos/${{ github.repository }}/pulls/$pr_number/merge" \
+            -d '{"merge_method": "merge"}' || { echo "::error::Merge failed"; exit 1; }
+          git pull origin ${{ env.BASE_BRANCH }}
+          git tag ${{ needs.bump_and_pr.outputs.output_next_version_tag }}
+          git push origin ${{ needs.bump_and_pr.outputs.output_next_version_tag }} || { echo "::error::Tag push failed"; exit 1; }
+          git push origin --delete ${{ needs.bump_and_pr.outputs.output_release_branch }} || true
 
-      - name: Check for Merge Conflicts
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.BOT_TOKEN }}
-          script: |
-            console.log(`[${new Date().toISOString()}] Checking for merge conflicts on PR #${{ needs.bump_and_pr.outputs.pr_number }}...`);
-            const { data: pr } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: ${{ needs.bump_and_pr.outputs.pr_number }}
-            });
-            if (pr.mergeable_state === 'dirty') {
-              core.setFailed('Merge conflict detected. Please resolve manually.');
-            } else {
-              console.log(`[${new Date().toISOString()}] No merge conflicts detected`);
-
-      - name: Merge Pull Request
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.BOT_TOKEN }}
-          script: |
-            console.log(`[${new Date().toISOString()}] Merging PR #${{ needs.bump_and_pr.outputs.pr_number }}...`);
-            await github.rest.pulls.merge({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: ${{ needs.bump_and_pr.outputs.pr_number }},
-              merge_method: 'merge'
-            });
-            console.log(`[${new Date().toISOString()}] PR #${{ needs.bump_and_pr.outputs.pr_number }} merged successfully`);
-
-      - name: Pull Latest Main Branch
-        run: |
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Pulling latest changes from ${{ env.BASE_BRANCH }}..."
-          git pull origin ${{ env.BASE_BRANCH }} || { echo "::error::git pull failed"; exit 1; }
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Latest changes pulled"
-
-      - name: Create and Push Git Tag
-        run: |
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Creating tag ${{ github.event.inputs.TAG_NAME }}..."
-          git tag ${{ github.event.inputs.TAG_NAME }}
-          git push origin ${{ github.event.inputs.TAG_NAME }} || { echo "::error::git push tag failed"; exit 1; }
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Tag ${{ github.event.inputs.TAG_NAME }} created and pushed successfully"
-
-      - name: Clean Up Release Branch
-        if: always() && needs.bump_and_pr.outputs.branch_name != ''
-        run: |
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Deleting branch ${{ needs.bump_and_pr.outputs.branch_name }}..."
-          git push origin --delete ${{ needs.bump_and_pr.outputs.branch_name }} || echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Branch already deleted or does not exist"
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Branch cleanup complete"
-
-      - name: Clean Up Workspace
+      - name: Clean Workspace
         if: always()
-        run: |
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Cleaning up workspace..."
-          rm -rf $GITHUB_WORKSPACE/* $GITHUB_WORKSPACE/.*
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Workspace cleaned"
+        run: rm -rf $GITHUB_WORKSPACE/* $GITHUB_WORKSPACE/.*
 
   sync_tags:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -225,107 +193,29 @@ jobs:
       contents: write
       id-token: write
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Configure Git
-        run: |
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Configuring Git user..."
-          git config user.name "GitHub Actions Bot"
-          git config user.email "bot@example.com"
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Git configuration complete"
-
-      - name: Extract and Validate Version
-        id: version
-        run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Processing pushed tag: $TAG"
-          if [[ "$TAG" =~ ^v([0-9]+)\.[0-9]+\.[0-9]+$ ]]; then
-            MAJOR_TAG="v${BASH_REMATCH[1]}"
-            echo "tag=$TAG" >> $GITHUB_OUTPUT
-            echo "major=$MAJOR_TAG" >> $GITHUB_OUTPUT
-            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Valid semver detected: $TAG"
-          else
-            echo "::error::Invalid tag format '$TAG'. Use vX.Y.Z"
-            exit 1
-          fi
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Sync Tags
         run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "bot@example.com"
+          version_tag="${GITHUB_REF#refs/tags/}"
+          [[ "$version_tag" =~ ^v([0-9]+)\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Invalid tag $version_tag. Use vX.Y.Z"; exit 1; }
+          major_version_tag="v${BASH_REMATCH[1]}"
           git fetch --tags
-          TAG="${{ steps.version.outputs.tag }}"
-          MAJOR="${{ steps.version.outputs.major }}"
-          if [[ "${{ env.ENABLE_MAJOR_TAG }}" == "true" ]]; then
-            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Updating major tag '$MAJOR' -> $TAG"
-            git tag -f "$MAJOR" "$TAG"
-            git push origin "$MAJOR" --force || { echo "::error::Failed to push major tag"; exit 1; }
-            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] '$MAJOR' tag updated"
-          else
-            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Major tag update skipped"
+          if [[ "${{ github.event.inputs.enable_major_tag }}" == "true" && ! $(git tag | grep -q "^$major_version_tag$") ]]; then
+            git tag -f "$major_version_tag" "$version_tag"
+            git push origin "$major_version_tag" --force || { echo "::error::Major tag push failed"; exit 1; }
           fi
-          if [[ "${{ env.ENABLE_LATEST_TAG }}" == "true" ]]; then
-            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Updating 'latest' tag -> $TAG"
-            git tag -f "latest" "$TAG"
-            git push origin "latest" --force || { echo "::error::Failed to push latest tag"; exit 1; }
-            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] 'latest' tag updated"
-          else
-            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Latest tag update skipped"
+          if [[ "${{ github.event.inputs.enable_latest_tag }}" == "true" ]]; then
+            git tag -f latest "$version_tag"
+            git push origin latest --force || { echo "::error::Latest tag push failed"; exit 1; }
           fi
-
-      - name: Clean Up Workspace
+          
+      - name: Clean Workspace
         if: always()
-        run: |
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Cleaning up workspace..."
-          rm -rf $GITHUB_WORKSPACE/* $GITHUB_WORKSPACE/.*
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Workspace cleaned"
-
-  notify_teams:
-    needs: [bump_and_pr, wait_for_approval, merge_and_tag, sync_tags]
-    permissions:
-      contents: none
-    runs-on: ubuntu-latest
-    steps:
-      - name: Send Teams Notification
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.BOT_TOKEN }}
-          script: |
-            console.log(`[${new Date().toISOString()}] Sending Teams notification...`);
-            const teamsWebhook = '${{ secrets.TEAMS_WEBHOOK_URL }}';
-            const isSuccess = ${{ job.status == 'success' }};
-            const title = isSuccess ? "Release Workflow Succeeded" : "Release Workflow Failed";
-            const facts = isSuccess
-              ? [
-                  { "name": "Repository", "value": "${{ github.repository }}" },
-                  { "name": "Tag", "value": "${{ github.event.inputs.TAG_NAME || github.ref_name }}" }
-                ]
-              : [
-                  { "name": "Repository", "value": "${{ github.repository }}" },
-                  { "name": "Tag", "value": "${{ github.event.inputs.TAG_NAME || github.ref_name }}" },
-                  { "name": "Run ID", "value": "${{ github.run_id }}" }
-                ];
-            const message = {
-              "@type": "MessageCard",
-              "@context": "http://schema.org/extensions",
-              "summary": title,
-              "sections": [{
-                "activityTitle": title,
-                "facts": facts,
-                "markdown": true
-              }],
-              "potentialAction": [{
-                "@type": "OpenUri",
-                "name": isSuccess ? "View Release" : "View Run",
-                "targets": [{ "os": "default", "uri": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" }]
-              }]
-            };
-            const response = await fetch(teamsWebhook, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(message)
-            });
-            if (!response.ok) {
-              core.setFailed(`Failed to send Teams notification: ${response.statusText}`);
-            } else {
-              console.log(`[${new Date().toISOString()}] Teams notification sent successfully`);
+        run: rm -rf $GITHUB_WORKSPACE/* $GITHUB_WORKSPACE/.*
