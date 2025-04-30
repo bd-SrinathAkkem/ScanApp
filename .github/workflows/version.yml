@@ -1,4 +1,4 @@
-name: Test
+name: Release-Tag-Sync
 
 on:
   workflow_dispatch:
