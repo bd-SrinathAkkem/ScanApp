@@ -269,7 +269,7 @@ jobs:
         run: |
           git config user.name "GitHub Actions Bot"
           git config user.email "bot@example.com"
-          version_tag = ${{ needs.bump_and_pr.outputs.output_next_version_tag }}
+          version_tag=${{ needs.bump_and_pr.outputs.output_next_version_tag }}
           [[ "$version_tag" =~ ^v([0-9]+)\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Invalid tag $version_tag. Use vX.Y.Z"; exit 1; }
           major_version_tag="v${BASH_REMATCH[1]}"
           git fetch --tags
