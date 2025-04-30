@@ -8,8 +8,8 @@ on:
 jobs:
   sync_tags:
     env:
-      ENABLE_MAJOR_TAG: true
-      ENABLE_LATEST_TAG: true
+      enable_major_tag: true
+      enable_latest_tag: true
       
     permissions:
       contents: write
