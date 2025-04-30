@@ -1,4 +1,4 @@
-name: Release and Tag Synchronization
+name: Test
 
 on:
   workflow_dispatch:
