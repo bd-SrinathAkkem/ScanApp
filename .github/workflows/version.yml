@@ -24,7 +24,9 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    runs-on: [ ubuntu-latest, self-hosted ]
+    runs-on: 
+      - ubuntu-latest
+      # - self-hosted
     timeout-minutes: 10
     outputs:
       output_release_branch: ${{ steps.create-branch.outputs.release_branch }}
@@ -115,7 +117,9 @@ jobs:
     needs: bump_and_pr
     permissions:
       pull-requests: write
-    runs-on: [ ubuntu-latest, self-hosted ]
+    runs-on: 
+      - ubuntu-latest
+      # - self-hosted
     timeout-minutes: 60
     steps:
       - uses: actions/github-script@v7
@@ -150,7 +154,9 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    runs-on: [ ubuntu-latest, self-hosted ]
+    runs-on: 
+      - ubuntu-latest
+      # - self-hosted
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
