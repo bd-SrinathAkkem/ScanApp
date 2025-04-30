@@ -77,7 +77,6 @@ jobs:
           git commit -m "Bump version to $next_version_tag"
           release_branch=${{ env.RELEASE_BRANCH_PREFIX }}_${next_version_tag}
           git checkout -b "$release_branch"
-          git pull origin "$release_branch" --rebase || true
           git push origin "$release_branch" || { echo "::error::git push failed"; exit 1; }
           echo "release_branch=$release_branch" >> $GITHUB_OUTPUT
 
@@ -88,7 +87,7 @@ jobs:
           github-token: ${{ secrets.BOT_TOKEN }}
           script: |
             const octokit = github;
-            const { data: pr } = await octokit.pulls.create({
+            const { data: pr } = await octokit.rest.pulls.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
               title: `Release ${{ steps.validate-tag.outputs.next_version_tag }}`,
@@ -97,7 +96,7 @@ jobs:
               base: '${{ env.BASE_BRANCH }}'
             });
             core.setOutput('pr_number', pr.number);
-
+            
       - name: Clean Workspace
         if: always()
         run: rm -rf $GITHUB_WORKSPACE/* $GITHUB_WORKSPACE/.*
@@ -157,7 +156,7 @@ jobs:
           script: |
             const pr_number = ${{ needs.bump_and_pr.outputs.output_pr_number }};
             const octokit = github;
-            const { data: pr } = await octokit.pulls.get({
+            const { data: pr } = await octokit.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: pr_number
@@ -168,7 +167,7 @@ jobs:
               core.setFailed(`PR #${pr_number} was closed without merging.`);
               return;
             } else if (pr.mergeable_state === 'dirty') {
-              await octokit.issues.createComment({
+              await octokit.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: pr_number,
@@ -177,7 +176,7 @@ jobs:
               core.setFailed(`Merge conflict detected in PR #${pr_number}.`);
               return;
             } else {
-              await octokit.pulls.merge({
+              await octokit.rest.pulls.merge({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 pull_number: pr_number,
