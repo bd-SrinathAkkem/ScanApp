@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       versionTag:
-        description: 'Version tag to bump (e.g., v1.0.0)'
+        description: 'Bump Version (e.g., v1.0.0)'
         required: true
         type: string
 
@@ -79,7 +79,7 @@ jobs:
           echo "${{ env.LOG_PREFIX }} Next version tag: $NEXT_VERSION_TAG"
           echo "nextVersionTag=$NEXT_VERSION_TAG" >> $GITHUB_OUTPUT
         shell: bash
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -120,7 +120,7 @@ jobs:
               head: `${{ steps.createBranch.outputs.releaseBranch }}`,
               base: '${{ env.BASE_BRANCH }}'
             });
-            console.log("${{ env.LOG_PREFIX }} Pull request created: #${pr.number}");
+            console.log(`${{ env.LOG_PREFIX }} Pull request created: #${pr.number}`);
             core.setOutput('prNumber', pr.number);
 
       - name: Clean Workspace
@@ -149,7 +149,7 @@ jobs:
                 pull_number: PR_NUMBER
               });
             
-              if (pr.merged) return console.log("${{ env.LOG_PREFIX }} PR #${PR_NUMBER} merged");
+              if (pr.merged) return console.log(`${{ env.LOG_PREFIX }} PR #${PR_NUMBER} merged`);
               if (pr.state === 'closed' && !pr.merged) core.setFailed(`PR #${PR_NUMBER} closed without merging`);
             
               const { data: reviews } = await github.rest.pulls.listReviews({
@@ -158,9 +158,9 @@ jobs:
                 pull_number: PR_NUMBER
               });
             
-              if (reviews.some(review => review.state === 'APPROVED')) return console.log("${{ env.LOG_PREFIX }} PR #${PR_NUMBER} approved");
+              if (reviews.some(review => review.state === 'APPROVED')) return console.log(`${{ env.LOG_PREFIX }} PR #${PR_NUMBER} approved`);
             
-              console.log("${{ env.LOG_PREFIX }} Waiting 30s (Attempt ${attempt}/120)");
+              console.log(`${{ env.LOG_PREFIX }} Waiting 30s (Attempt ${attempt}/120)`);
               await new Promise(resolve => setTimeout(resolve, 30000));
             }
             core.setFailed(`PR #${PR_NUMBER} not approved within 60 minutes`);
@@ -195,7 +195,7 @@ jobs:
             });
             
             if (pr.merged) {
-              console.log("${{ env.LOG_PREFIX }} PR #${PR_NUMBER} already merged");
+              console.log(`${{ env.LOG_PREFIX }} PR #${PR_NUMBER} already merged`);
             } else if (pr.state === 'closed') {
               core.setFailed(`PR #${PR_NUMBER} closed without merging`);
             } else if (pr.mergeable_state === 'dirty') {
@@ -213,7 +213,7 @@ jobs:
                 pull_number: PR_NUMBER,
                 merge_method: 'merge'
               });
-              console.log("${{ env.LOG_PREFIX }} PR #${PR_NUMBER} merged");
+              console.log(`${{ env.LOG_PREFIX }} PR #${PR_NUMBER} merged`);
             }
             
             // Tag and release creation
@@ -223,7 +223,7 @@ jobs:
               ref: `refs/tags/${{ needs.bumpAndCreatePR.outputs.nextVersionTag }}`,
               sha: pr.merge_commit_sha
             });
-            console.log("${{ env.LOG_PREFIX }} Tag ${{ needs.bumpAndCreatePR.outputs.nextVersionTag }} created");
+            console.log(`${{ env.LOG_PREFIX }} Tag ${{ needs.bumpAndCreatePR.outputs.nextVersionTag }} created`);
             
             await octokit.rest.repos.createRelease({
               owner: context.repo.owner,
@@ -235,7 +235,7 @@ jobs:
               prerelease: false,
               generate_release_notes: false
             });
-            console.log("${{ env.LOG_PREFIX }} Draft Release created");
+            console.log(`${{ env.LOG_PREFIX }} Draft Release created`);
 
       - name: Clean Workspace
         if: always()
@@ -280,4 +280,3 @@ jobs:
       - name: Clean Workspace
         if: always()
         run: rm -rf $GITHUB_WORKSPACE/*
-        
