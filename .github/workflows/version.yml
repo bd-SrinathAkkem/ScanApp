@@ -137,7 +137,7 @@ jobs:
 
   merge_and_tag:
     if: github.event_name == 'workflow_dispatch'
-    needs: wait_for_approval
+    needs: [ wait_for_approval, bump_and_pr ]
     permissions:
       contents: write
       pull-requests: write
