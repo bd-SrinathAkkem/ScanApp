@@ -1,0 +1,30 @@
+name: BD SCA Scan
+on:
+  push:
+    branches: [ main, master, develop, stage, release ]
+  pull_request:
+    branches: [ main, master, develop, stage, release ]
+  workflow_dispatch:  
+jobs:
+  build:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v3
+      - name: Black Duck Full Scan
+        id: black-duck-security-scan
+        uses: blackduck-inc/black-duck-security-scan@SIGINT-2971
+        env:
+          DETECT_PROJECT_NAME: ${{ github.event.repository.name }}
+        with:
+          blackducksca_url: ${{ vars.BLACKDUCK_URL }}
+          blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
+          blackducksca_scan_failure_severities: 'BLOCKER,CRITICAL'
+          github_token: ${{ secrets.GIT_PAT_TOKEN }}
+          include_diagnostics: true
+          mark_build_status: success
+      - name: cmdLine
+        id: cmdLine
+        run: |
+          EXIT_CODE=${{ steps.black-duck-security-scan.outputs.status }}
+          echo "Black Duck Security Scan exit status - $EXIT_CODE"
