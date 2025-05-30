@@ -1,30 +1,23 @@
-name: BlackduckSCA
+name: BD SCA Scan
 on:
   push:
-    branches: [ "main" ]
-permissions:
-  contents: read
-  security-events: write
-  issues: write
-  pull-requests: write
+    branches: [ main, master, develop, stage, release ]
+  pull_request:
+    branches: [ main, master, develop, stage, release ]
+  workflow_dispatch:  
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-        ACTIONS_STEP_DEBUG: true
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Black Duck SCA Scan
+      - name: Checkout Source
+        uses: actions/checkout@v3
+      - name: Black Duck Full Scan
         id: black-duck-security-scan
         uses: blackduck-inc/black-duck-security-scan@v2.1.1
         env:
-            DETECT_PROJECT_NAME: ${{ github.event.repository.name }}
-            ACTIONS_RUNNER_DEBUG: true
-            ACTIONS_STEP_DEBUG: true
+          DETECT_PROJECT_NAME: ${{ github.event.repository.name }}
         with:
-            github_token: ${{ secrets.GIT_PAT_TOKEN }}
-            blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
-            blackducksca_url: ${{ secrets.BLACKDUCK_URL }}
-            blackducksca_reports_sarif_create: true
-            include_diagnostics: true
+          blackducksca_url: ${{ vars.BLACKDUCK_URL }}
+          blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
+          blackducksca_reports_sarif_create: true
+          include_diagnostics: true
