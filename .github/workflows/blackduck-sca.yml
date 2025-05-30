@@ -21,3 +21,4 @@ jobs:
           blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
           blackducksca_reports_sarif_create: true
           include_diagnostics: true
+          github_token: ${{ secrets.BOT_TOKEN }}
