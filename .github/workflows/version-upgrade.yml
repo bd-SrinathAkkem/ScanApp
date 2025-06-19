@@ -1,4 +1,4 @@
-name: ReleaseTagSync
+name: VersionUpgrade
 
 on:
   workflow_dispatch:
@@ -9,11 +9,9 @@ on:
         type: string
 
 env:
-  ENABLE_MAJOR_TAG: true
-  ENABLE_LATEST_TAG: true
   RELEASE_BRANCH_PREFIX: release
   BASE_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
-  LOG_PREFIX: "[ReleaseTagSync][$(date -u +%Y-%m-%dT%H:%M:%SZ)]"
+  LOG_PREFIX: "[VersionUpgrade][$(date -u +%Y-%m-%dT%H:%M:%SZ)]"
 
 concurrency:
   group: release-${{ github.event.inputs.versionTag || github.ref }}
@@ -128,7 +126,7 @@ jobs:
               head: `${{ steps.createBranch.outputs.releaseBranch }}`,
               base: '${{ env.BASE_BRANCH }}'
             });
-            console.log(`[ReleaseTagSync][${new Date().toISOString()}] Pull request created: #${pr.number}`);
+            console.log(`[VersionUpgrade][${new Date().toISOString()}] Pull request created: #${pr.number}`);
             core.setOutput('prNumber', pr.number);
 
       - name: Clean Workspace
@@ -157,7 +155,7 @@ jobs:
                 pull_number: PR_NUMBER
               });
             
-              if (pr.merged) return console.log(`[ReleaseTagSync][${new Date().toISOString()}] PR #${PR_NUMBER} merged`);
+              if (pr.merged) return console.log(`[VersionUpgrade][${new Date().toISOString()}] PR #${PR_NUMBER} merged`);
               if (pr.state === 'closed' && !pr.merged) core.setFailed(`PR #${PR_NUMBER} closed without merging`);
             
               const { data: reviews } = await github.rest.pulls.listReviews({
@@ -166,15 +164,15 @@ jobs:
                 pull_number: PR_NUMBER
               });
             
-              if (reviews.some(review => review.state === 'APPROVED')) return console.log(`[ReleaseTagSync][${new Date().toISOString()}] PR #${PR_NUMBER} approved`);
+              if (reviews.some(review => review.state === 'APPROVED')) return console.log(`[VersionUpgrade][${new Date().toISOString()}] PR #${PR_NUMBER} approved`);
             
-              console.log(`[ReleaseTagSync][${new Date().toISOString()}] Waiting 30s (Attempt ${attempt}/120)`);
+              console.log(`[VersionUpgrade][${new Date().toISOString()}] Waiting 30s (Attempt ${attempt}/120)`);
               await new Promise(resolve => setTimeout(resolve, 30000));
             }
             core.setFailed(`PR #${PR_NUMBER} not approved within 60 minutes`);
 
   mergeAndTag:
-    name: Merge PR and Create Tags
+    name: Merge PR and Create Tag
     if: github.event_name == 'workflow_dispatch'
     needs:
       - waitForApproval
@@ -197,123 +195,110 @@ jobs:
           github-token: ${{ secrets.BOT_TOKEN }}
           script: |
             const PR_NUMBER = ${{ needs.bumpAndCreatePR.outputs.prNumber }};
-            const octokit = github;
-            const { data: pr } = await octokit.rest.pulls.get({
+            const NEXT_VERSION_TAG = '${{ needs.bumpAndCreatePR.outputs.nextVersionTag }}';
+            const log = (msg) => console.log(`[VersionUpgrade][${new Date().toISOString()}] ${msg}`);
+
+            // Get PR details
+            const { data: pr } = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: PR_NUMBER
             });
-            
+
             if (pr.merged) {
-              console.log(`[ReleaseTagSync][${new Date().toISOString()}] PR #${PR_NUMBER} already merged`);
+              log(`PR #${PR_NUMBER} already merged`);
             } else if (pr.state === 'closed') {
               core.setFailed(`PR #${PR_NUMBER} closed without merging`);
-            } else if (pr.mergeable_state === 'dirty') {
-              console.log(`[ReleaseTagSync][${new Date().toISOString()}] PR #${PR_NUMBER} has merge conflicts. Attempting to resolve...`);
+              return;
+            } else {
+              // Check mergeability
+              let mergeable = pr.mergeable;
+              let mergeable_state = pr.mergeable_state;
+              // Sometimes mergeable is null if GitHub hasn't calculated it yet
+              if (mergeable === null) {
+                log('Mergeable state is null, refetching...');
+                for (let i = 0; i < 5; i++) {
+                  await new Promise(r => setTimeout(r, 2000));
+                  const { data: pr2 } = await github.rest.pulls.get({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    pull_number: PR_NUMBER
+                  });
+                  if (pr2.mergeable !== null) {
+                    mergeable = pr2.mergeable;
+                    mergeable_state = pr2.mergeable_state;
+                    break;
+                  }
+                }
+              }
+              log(`mergeable: ${mergeable}, mergeable_state: ${mergeable_state}`);
+              if (mergeable_state === 'dirty' || mergeable === false) {
+                core.setFailed(`PR #${PR_NUMBER} cannot be merged automatically (merge conflicts). Please resolve conflicts manually.`);
+                return;
+              }
+              // Try to merge the PR
               try {
-                // Fetch the base branch and merge it into the PR branch
-                await octokit.rest.repos.merge({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  base: pr.head.ref,
-                  head: pr.base.ref
-                });
-                console.log(`[ReleaseTagSync][${new Date().toISOString()}] Conflicts resolved. Proceeding to merge PR #${PR_NUMBER}...`);
-            
-                // Attempt to merge the PR
-                await octokit.rest.pulls.merge({
+                await github.rest.pulls.merge({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   pull_number: PR_NUMBER,
                   merge_method: 'merge'
                 });
-                console.log(`[ReleaseTagSync][${new Date().toISOString()}] PR #${PR_NUMBER} merged successfully`);
-              } catch (error) {
-                await octokit.rest.issues.createComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: PR_NUMBER,
-                  body: 'Automatic conflict resolution failed. Please resolve conflicts manually.'
-                });
-                core.setFailed(`Merge conflict in PR #${PR_NUMBER} could not be resolved automatically`);
+                log(`PR #${PR_NUMBER} merged`);
+              } catch (e) {
+                core.setFailed(`Failed to merge PR #${PR_NUMBER}: ${e.message}`);
+                return;
               }
-            } else {
-              await octokit.rest.pulls.merge({
+            }
+
+            // Get the latest commit SHA on the base branch
+            const { data: branch } = await github.rest.repos.getBranch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              branch: pr.base.ref
+            });
+
+            // Create a tag
+            try {
+              await github.rest.git.createRef({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                pull_number: PR_NUMBER,
-                merge_method: 'merge'
+                ref: `refs/tags/${NEXT_VERSION_TAG}`,
+                sha: branch.commit.sha
               });
-              console.log(`[ReleaseTagSync][${new Date().toISOString()}] PR #${PR_NUMBER} merged`);
+              log(`Tag ${NEXT_VERSION_TAG} created`);
+            } catch (e) {
+              if (e.status === 422 && e.message.includes('Reference already exists')) {
+                log(`Tag ${NEXT_VERSION_TAG} already exists, skipping tag creation.`);
+              } else {
+                core.setFailed(`Failed to create tag: ${e.message}`);
+                return;
+              }
             }
-            
-            // Tag and release creation
-            await octokit.request('POST /repos/{owner}/{repo}/git/refs', {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              ref: `refs/tags/${{ needs.bumpAndCreatePR.outputs.nextVersionTag }}`,
-              sha: pr.merge_commit_sha
-            });
-            console.log(`[ReleaseTagSync][${new Date().toISOString()}] Tag ${{ needs.bumpAndCreatePR.outputs.nextVersionTag }} created`);
-            
-            await octokit.rest.repos.createRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag_name: '${{ needs.bumpAndCreatePR.outputs.nextVersionTag }}',
-              name: `Black Duck Security Scan ${{ needs.bumpAndCreatePR.outputs.nextVersionTag }}`,
-              body: `Black Duck Security Scan ${{ needs.bumpAndCreatePR.outputs.nextVersionTag }}`,
-              draft: true,
-              prerelease: false,
-              generate_release_notes: false
-            });
-            console.log(`[ReleaseTagSync][${new Date().toISOString()}] Draft Release created`);
+
+            // Create a draft release
+            try {
+              await github.rest.repos.createRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag_name: NEXT_VERSION_TAG,
+                name: `Black Duck Security Scan ${NEXT_VERSION_TAG}`,
+                body: `Black Duck Security Scan ${NEXT_VERSION_TAG}`,
+                draft: true,
+                prerelease: false
+              });
+              log(`Draft Release created`);
+            } catch (e) {
+              if (e.status === 422 && e.message.includes('already_exists')) {
+                log(`Draft release for tag ${NEXT_VERSION_TAG} already exists, skipping release creation.`);
+              } else {
+                core.setFailed(`Failed to create draft release: ${e.message}`);
+                return;
+              }
+            }
 
       - name: Clean Workspace
         if: always()
         run: |
-          rm -rf $GITHUB_WORKSPACE/*
-          git push origin --delete "${{ needs.bumpAndCreatePR.outputs.releaseBranch }}" || { echo "${{ env.LOG_PREFIX }} ::error::Failed to delete release branch"; exit 1; }
-
-  syncTags:
-    name: Sync Major and Latest Tags
-    needs:
-      - mergeAndTag
-      - bumpAndCreatePR
-    permissions:
-      contents: write
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Sync Tags
-        run: |
-          git config user.name "GitHub Actions Bot"
-          git config user.email "actions@github.com"
-          
-          VERSION_TAG="${{ needs.bumpAndCreatePR.outputs.nextVersionTag }}"
-          if [[ "$VERSION_TAG" =~ ^v([0-9]+)\.[0-9]+\.[0-9]+$ ]]; then
-            MAJOR_TAG="v${BASH_REMATCH[1]}"
-          else
-            echo "${{ env.LOG_PREFIX }} ::error::Invalid tag: $VERSION_TAG"
-            exit 1
-          fi
-          
-          git fetch --tags
-          if [[ "${{ env.ENABLE_MAJOR_TAG }}" == "true" && ! $(git tag | grep -q "^$MAJOR_TAG$") ]]; then
-            git tag -f "$MAJOR_TAG" "$VERSION_TAG" || { echo "${{ env.LOG_PREFIX }} ::error::Failed to create major tag"; exit 1; }
-            git push origin "$MAJOR_TAG" --force || { echo "${{ env.LOG_PREFIX }} ::error::Failed to push major tag"; exit 1; }
-          fi
-          
-          if [[ "${{ env.ENABLE_LATEST_TAG }}" == "true" ]]; then
-            git tag -f latest "$VERSION_TAG" || { echo "${{ env.LOG_PREFIX }} ::error::Failed to create latest tag"; exit 1; }
-            git push origin latest --force || { echo "${{ env.LOG_PREFIX }} ::error::Failed to push latest tag"; exit 1; }
-          fi
-        shell: bash
-
-      - name: Clean Workspace
-        if: always()
-        run: rm -rf $GITHUB_WORKSPACE/*
+          rm -rf $GITHUB_WORKSPACE
+          git push origin "${{ needs.bumpAndCreatePR.outputs.releaseBranch }}" || { echo "${PR_NUMBER} not approved"; exit 1; }
