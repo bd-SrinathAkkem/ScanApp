@@ -195,107 +195,76 @@ jobs:
           github-token: ${{ secrets.BOT_TOKEN }}
           script: |
             const PR_NUMBER = ${{ needs.bumpAndCreatePR.outputs.prNumber }};
-            const NEXT_VERSION_TAG = '${{ needs.bumpAndCreatePR.outputs.nextVersionTag }}';
-            const log = (msg) => console.log(`[VersionUpgrade][${new Date().toISOString()}] ${msg}`);
-
-            // Get PR details
-            const { data: pr } = await github.rest.pulls.get({
+            const octokit = github;
+            const { data: pr } = await octokit.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: PR_NUMBER
             });
-
+            
             if (pr.merged) {
-              log(`PR #${PR_NUMBER} already merged`);
+              console.log(`[VersionUpgrade][${new Date().toISOString()}] PR #${PR_NUMBER} already merged`);
             } else if (pr.state === 'closed') {
               core.setFailed(`PR #${PR_NUMBER} closed without merging`);
-              return;
-            } else {
-              // Check mergeability
-              let mergeable = pr.mergeable;
-              let mergeable_state = pr.mergeable_state;
-              // Sometimes mergeable is null if GitHub hasn't calculated it yet
-              if (mergeable === null) {
-                log('Mergeable state is null, refetching...');
-                for (let i = 0; i < 5; i++) {
-                  await new Promise(r => setTimeout(r, 2000));
-                  const { data: pr2 } = await github.rest.pulls.get({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    pull_number: PR_NUMBER
-                  });
-                  if (pr2.mergeable !== null) {
-                    mergeable = pr2.mergeable;
-                    mergeable_state = pr2.mergeable_state;
-                    break;
-                  }
-                }
-              }
-              log(`mergeable: ${mergeable}, mergeable_state: ${mergeable_state}`);
-              if (mergeable_state === 'dirty' || mergeable === false) {
-                core.setFailed(`PR #${PR_NUMBER} cannot be merged automatically (merge conflicts). Please resolve conflicts manually.`);
-                return;
-              }
-              // Try to merge the PR
+            } else if (pr.mergeable_state === 'dirty') {
+              console.log(`[VersionUpgrade][${new Date().toISOString()}] PR #${PR_NUMBER} has merge conflicts. Attempting to resolve...`);
               try {
-                await github.rest.pulls.merge({
+                // Fetch the base branch and merge it into the PR branch
+                await octokit.rest.repos.merge({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  base: pr.head.ref,
+                  head: pr.base.ref
+                });
+                console.log(`[VersionUpgrade][${new Date().toISOString()}] Conflicts resolved. Proceeding to merge PR #${PR_NUMBER}...`);
+            
+                // Attempt to merge the PR
+                await octokit.rest.pulls.merge({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   pull_number: PR_NUMBER,
                   merge_method: 'merge'
                 });
-                log(`PR #${PR_NUMBER} merged`);
-              } catch (e) {
-                core.setFailed(`Failed to merge PR #${PR_NUMBER}: ${e.message}`);
-                return;
+                console.log(`[VersionUpgrade][${new Date().toISOString()}] PR #${PR_NUMBER} merged successfully`);
+              } catch (error) {
+                await octokit.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: PR_NUMBER,
+                  body: 'Automatic conflict resolution failed. Please resolve conflicts manually.'
+                });
+                core.setFailed(`Merge conflict in PR #${PR_NUMBER} could not be resolved automatically`);
               }
+            } else {
+              await octokit.rest.pulls.merge({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: PR_NUMBER,
+                merge_method: 'merge'
+              });
+              console.log(`[VersionUpgrade][${new Date().toISOString()}] PR #${PR_NUMBER} merged`);
             }
-
-            // Get the latest commit SHA on the base branch
-            const { data: branch } = await github.rest.repos.getBranch({
+            
+            // Tag and release creation
+            await octokit.request('POST /repos/{owner}/{repo}/git/refs', {
               owner: context.repo.owner,
               repo: context.repo.repo,
-              branch: pr.base.ref
+              ref: `refs/tags/${{ needs.bumpAndCreatePR.outputs.nextVersionTag }}`,
+              sha: pr.merge_commit_sha
             });
-
-            // Create a tag
-            try {
-              await github.rest.git.createRef({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                ref: `refs/tags/${NEXT_VERSION_TAG}`,
-                sha: branch.commit.sha
-              });
-              log(`Tag ${NEXT_VERSION_TAG} created`);
-            } catch (e) {
-              if (e.status === 422 && e.message.includes('Reference already exists')) {
-                log(`Tag ${NEXT_VERSION_TAG} already exists, skipping tag creation.`);
-              } else {
-                core.setFailed(`Failed to create tag: ${e.message}`);
-                return;
-              }
-            }
-
-            // Create a draft release
-            try {
-              await github.rest.repos.createRelease({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                tag_name: NEXT_VERSION_TAG,
-                name: `Black Duck Security Scan ${NEXT_VERSION_TAG}`,
-                body: `Black Duck Security Scan ${NEXT_VERSION_TAG}`,
-                draft: true,
-                prerelease: false
-              });
-              log(`Draft Release created`);
-            } catch (e) {
-              if (e.status === 422 && e.message.includes('already_exists')) {
-                log(`Draft release for tag ${NEXT_VERSION_TAG} already exists, skipping release creation.`);
-              } else {
-                core.setFailed(`Failed to create draft release: ${e.message}`);
-                return;
-              }
-            }
+            console.log(`[VersionUpgrade][${new Date().toISOString()}] Tag ${{ needs.bumpAndCreatePR.outputs.nextVersionTag }} created`);
+            
+            await octokit.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: '${{ needs.bumpAndCreatePR.outputs.nextVersionTag }}',
+              name: `Black Duck Security Scan ${{ needs.bumpAndCreatePR.outputs.nextVersionTag }}`,
+              body: `Black Duck Security Scan ${{ needs.bumpAndCreatePR.outputs.nextVersionTag }}`,
+              draft: true,
+              prerelease: false,
+              generate_release_notes: false
+            });
+            console.log(`[VersionUpgrade][${new Date().toISOString()}] Draft Release created`);
 
       - name: Clean Workspace
         if: always()
