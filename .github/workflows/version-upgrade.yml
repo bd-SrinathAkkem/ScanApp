@@ -55,11 +55,14 @@ jobs:
           echo "${{ env.LOG_PREFIX }} SR2 Next version tag: $VERSION_TAG"
           
           MATCHING_TAGS=$(git tag | grep -E "^v$MAJOR\.$MINOR\.[0-9]+$" | sort -V)
-          echo "${{ env.LOG_PREFIX }} SR2 Next version tag: $VERSION_TAG"
+          echo "${{ env.LOG_PREFIX }} SR2 Next version tag: $MATCHING_TAGS"
           if [ -z "$MATCHING_TAGS" ]; then
+            echo "${{ env.LOG_PREFIX }} SR3 Next version tag: $MATCHING_TAGS"
             NEXT_VERSION_TAG="v$MAJOR.$MINOR.$PATCH"
+            echo "${{ env.LOG_PREFIX }} SR4 Next version tag: $NEXT_VERSION_TAG"
           else
             HIGHEST_PATCH=$(echo "$MATCHING_TAGS" | tail -n 1 | cut -d'.' -f3)
+            echo "${{ env.LOG_PREFIX }} SR5 Next version tag: $HIGHEST_PATCH"
             if [ "$HIGHEST_PATCH" -lt 9 ]; then
               NEXT_VERSION_TAG="v$MAJOR.$MINOR.$((HIGHEST_PATCH + 1))"
             elif [ "$MINOR" -lt 9 ]; then
@@ -67,6 +70,7 @@ jobs:
             else
               NEXT_VERSION_TAG="v$((MAJOR + 1)).0.0"
             fi
+            echo "${{ env.LOG_PREFIX }} SR6 Next version tag: $NEXT_VERSION_TAG"
           fi
           
           echo "${{ env.LOG_PREFIX }} Matching Next version tag: $NEXT_VERSION_TAG"
