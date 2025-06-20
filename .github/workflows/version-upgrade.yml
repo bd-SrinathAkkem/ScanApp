@@ -64,6 +64,8 @@ jobs:
             fi
           fi
           
+          echo "${{ env.LOG_PREFIX }} Matching Next version tag: $NEXT_VERSION_TAG"
+          
           MAX_ATTEMPTS=100
           attempt=0
           while git tag | grep -q "^$NEXT_VERSION_TAG$"; do
