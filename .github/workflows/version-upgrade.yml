@@ -1,4 +1,4 @@
-name: ReleaseTagSync
+name: VersionUpgrade
 
 on:
   workflow_dispatch:
@@ -9,11 +9,9 @@ on:
         type: string
 
 env:
-  ENABLE_MAJOR_TAG: true
-  ENABLE_LATEST_TAG: true
   RELEASE_BRANCH_PREFIX: release
   BASE_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
-  LOG_PREFIX: "[ReleaseTagSync][$(date -u +%Y-%m-%dT%H:%M:%SZ)]"
+  LOG_PREFIX: "[VersionUpgrade]"
 
 concurrency:
   group: release-${{ github.event.inputs.versionTag || github.ref }}
@@ -47,45 +45,9 @@ jobs:
           echo "${{ env.LOG_PREFIX }} Validating version tag: ${{ github.event.inputs.versionTag }}"
           VERSION_TAG="${{ github.event.inputs.versionTag }}"
           [[ "$VERSION_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "${{ env.LOG_PREFIX }} ::error::Invalid version tag format. Expected vX.Y.Z, got $VERSION_TAG"; exit 1; }
-          VERSION_TAG="${VERSION_TAG#v}"
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION_TAG"
-          
-          git fetch --tags
-          
-          MATCHING_TAGS=$(git tag | grep -E "^v$MAJOR\.$MINOR\.[0-9]+$" | sort -V)
-          if [ -z "$MATCHING_TAGS" ]; then
-            NEXT_VERSION_TAG="v$MAJOR.$MINOR.$PATCH"
-          else
-            HIGHEST_PATCH=$(echo "$MATCHING_TAGS" | tail -n 1 | cut -d'.' -f3)
-            if [ "$HIGHEST_PATCH" -lt 9 ]; then
-              NEXT_VERSION_TAG="v$MAJOR.$MINOR.$((HIGHEST_PATCH + 1))"
-            elif [ "$MINOR" -lt 9 ]; then
-              NEXT_VERSION_TAG="v$MAJOR.$((MINOR + 1)).0"
-            else
-              NEXT_VERSION_TAG="v$((MAJOR + 1)).0.0"
-            fi
-          fi
-          
-          MAX_ATTEMPTS=100
-          attempt=0
-          while git tag | grep -q "^$NEXT_VERSION_TAG$"; do
-            attempt=$((attempt + 1))
-            if [ "$attempt" -ge "$MAX_ATTEMPTS" ]; then
-              echo "${{ env.LOG_PREFIX }} ::error::Exceeded maximum attempts to find a unique version tag"
-              exit 1
-            fi
-            IFS='.' read -r _ MAJOR MINOR PATCH <<< "${NEXT_VERSION_TAG#v}"
-            if [ "$PATCH" -lt 9 ]; then
-              NEXT_VERSION_TAG="v$MAJOR.$MINOR.$((PATCH + 1))"
-            elif [ "$MINOR" -lt 9 ]; then
-              NEXT_VERSION_TAG="v$MAJOR.$((MINOR + 1)).0"
-            else
-              NEXT_VERSION_TAG="v$((MAJOR + 1)).0.0"
-            fi
-          done
-          
-          echo "${{ env.LOG_PREFIX }} Next version tag: $NEXT_VERSION_TAG"
-          echo "nextVersionTag=$NEXT_VERSION_TAG" >> $GITHUB_OUTPUT
+
+          echo "${{ env.LOG_PREFIX }} Next version tag: $VERSION_TAG"
+          echo "nextVersionTag=$VERSION_TAG" >> $GITHUB_OUTPUT
         shell: bash
 
       - name: Setup Node.js
@@ -98,19 +60,19 @@ jobs:
         run: |
           git config user.name "GitHub Actions Bot"
           git config user.email "actions@github.com"
-          
+
           npm ci || { echo "${{ env.LOG_PREFIX }} ::error::Failed to install dependencies"; exit 1; }
           bumpVersion="${{ steps.validateTag.outputs.nextVersionTag }}"
           bumpVersionTag="${bumpVersion#v}"
           npm version "$bumpVersionTag" --no-git-tag-version || { echo "${{ env.LOG_PREFIX }} ::error::Failed to bump version"; exit 1; }
-          
+
           git add package.json package-lock.json
           git commit -m "chore(release): bump npm version to ${{ steps.validateTag.outputs.nextVersionTag }}" || { echo "${{ env.LOG_PREFIX }} ::error::Failed to commit"; exit 1; }
-          
+
           RELEASE_BRANCH="${{ env.RELEASE_BRANCH_PREFIX }}_${{ steps.validateTag.outputs.nextVersionTag }}"
           git checkout -b "$RELEASE_BRANCH" || { echo "${{ env.LOG_PREFIX }} ::error::Failed to create branch"; exit 1; }
           git push origin "$RELEASE_BRANCH" || { echo "${{ env.LOG_PREFIX }} ::error::Failed to push branch"; exit 1; }
-          
+
           echo "releaseBranch=$RELEASE_BRANCH" >> $GITHUB_OUTPUT
         shell: bash
 
@@ -128,7 +90,7 @@ jobs:
               head: `${{ steps.createBranch.outputs.releaseBranch }}`,
               base: '${{ env.BASE_BRANCH }}'
             });
-            console.log(`[ReleaseTagSync][${new Date().toISOString()}] Pull request created: #${pr.number}`);
+            console.log(`[VersionUpgrade][${new Date().toISOString()}] Pull request created: #${pr.number}`);
             core.setOutput('prNumber', pr.number);
 
       - name: Clean Workspace
@@ -156,25 +118,25 @@ jobs:
                 repo: context.repo.repo,
                 pull_number: PR_NUMBER
               });
-            
-              if (pr.merged) return console.log(`[ReleaseTagSync][${new Date().toISOString()}] PR #${PR_NUMBER} merged`);
+
+              if (pr.merged) return console.log(`[VersionUpgrade][${new Date().toISOString()}] PR #${PR_NUMBER} merged`);
               if (pr.state === 'closed' && !pr.merged) core.setFailed(`PR #${PR_NUMBER} closed without merging`);
-            
+
               const { data: reviews } = await github.rest.pulls.listReviews({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 pull_number: PR_NUMBER
               });
-            
-              if (reviews.some(review => review.state === 'APPROVED')) return console.log(`[ReleaseTagSync][${new Date().toISOString()}] PR #${PR_NUMBER} approved`);
-            
-              console.log(`[ReleaseTagSync][${new Date().toISOString()}] Waiting 30s (Attempt ${attempt}/120)`);
+
+              if (reviews.some(review => review.state === 'APPROVED')) return console.log(`[VersionUpgrade][${new Date().toISOString()}] PR #${PR_NUMBER} approved`);
+
+              console.log(`[VersionUpgrade][${new Date().toISOString()}] Waiting 30s (Attempt ${attempt}/120)`);
               await new Promise(resolve => setTimeout(resolve, 30000));
             }
             core.setFailed(`PR #${PR_NUMBER} not approved within 60 minutes`);
 
   mergeAndTag:
-    name: Merge PR and Create Tags
+    name: Merge PR and Create Tag
     if: github.event_name == 'workflow_dispatch'
     needs:
       - waitForApproval
@@ -203,23 +165,23 @@ jobs:
               repo: context.repo.repo,
               pull_number: PR_NUMBER
             });
-            
+
             if (pr.merged) {
-              console.log(`[ReleaseTagSync][${new Date().toISOString()}] PR #${PR_NUMBER} already merged`);
+              console.log(`[VersionUpgrade][${new Date().toISOString()}] PR #${PR_NUMBER} already merged`);
             } else if (pr.state === 'closed') {
               core.setFailed(`PR #${PR_NUMBER} closed without merging`);
             } else if (pr.mergeable_state === 'dirty') {
-              console.log(`[ReleaseTagSync][${new Date().toISOString()}] PR #${PR_NUMBER} has merge conflicts. Attempting to resolve...`);
+              console.log(`[VersionUpgrade][${new Date().toISOString()}] PR #${PR_NUMBER} has merge conflicts. Attempting to resolve...`);
               try {
                 // Fetch the base branch and merge it into the PR branch
                 await octokit.rest.repos.merge({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
-                  base: pr.head.ref,
-                  head: pr.base.ref
+                  base: pr.base.ref,
+                  head: pr.head.ref
                 });
-                console.log(`[ReleaseTagSync][${new Date().toISOString()}] Conflicts resolved. Proceeding to merge PR #${PR_NUMBER}...`);
-            
+                console.log(`[VersionUpgrade][${new Date().toISOString()}] Conflicts resolved. Proceeding to merge PR #${PR_NUMBER}...`);
+
                 // Attempt to merge the PR
                 await octokit.rest.pulls.merge({
                   owner: context.repo.owner,
@@ -227,7 +189,7 @@ jobs:
                   pull_number: PR_NUMBER,
                   merge_method: 'merge'
                 });
-                console.log(`[ReleaseTagSync][${new Date().toISOString()}] PR #${PR_NUMBER} merged successfully`);
+                console.log(`[VersionUpgrade][${new Date().toISOString()}] PR #${PR_NUMBER} merged successfully`);
               } catch (error) {
                 await octokit.rest.issues.createComment({
                   owner: context.repo.owner,
@@ -244,9 +206,9 @@ jobs:
                 pull_number: PR_NUMBER,
                 merge_method: 'merge'
               });
-              console.log(`[ReleaseTagSync][${new Date().toISOString()}] PR #${PR_NUMBER} merged`);
+              console.log(`[VersionUpgrade][${new Date().toISOString()}] PR #${PR_NUMBER} merged`);
             }
-            
+
             // Tag and release creation
             await octokit.request('POST /repos/{owner}/{repo}/git/refs', {
               owner: context.repo.owner,
@@ -254,66 +216,22 @@ jobs:
               ref: `refs/tags/${{ needs.bumpAndCreatePR.outputs.nextVersionTag }}`,
               sha: pr.merge_commit_sha
             });
-            console.log(`[ReleaseTagSync][${new Date().toISOString()}] Tag ${{ needs.bumpAndCreatePR.outputs.nextVersionTag }} created`);
-            
+            console.log(`[VersionUpgrade][${new Date().toISOString()}] Tag ${{ needs.bumpAndCreatePR.outputs.nextVersionTag }} created`);
+
             await octokit.rest.repos.createRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              tag_name: '${{ needs.bumpAndCreatePR.outputs.nextVersionTag }}',
+              tag_name: ${{ needs.bumpAndCreatePR.outputs.nextVersionTag }},
               name: `Black Duck Security Scan ${{ needs.bumpAndCreatePR.outputs.nextVersionTag }}`,
               body: `Black Duck Security Scan ${{ needs.bumpAndCreatePR.outputs.nextVersionTag }}`,
               draft: true,
               prerelease: false,
               generate_release_notes: false
             });
-            console.log(`[ReleaseTagSync][${new Date().toISOString()}] Draft Release created`);
+            console.log(`[VersionUpgrade][${new Date().toISOString()}] Draft Release created`);
 
       - name: Clean Workspace
         if: always()
         run: |
-          rm -rf $GITHUB_WORKSPACE/*
-          git push origin --delete "${{ needs.bumpAndCreatePR.outputs.releaseBranch }}" || { echo "${{ env.LOG_PREFIX }} ::error::Failed to delete release branch"; exit 1; }
-
-  syncTags:
-    name: Sync Major and Latest Tags
-    needs:
-      - mergeAndTag
-      - bumpAndCreatePR
-    permissions:
-      contents: write
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Sync Tags
-        run: |
-          git config user.name "GitHub Actions Bot"
-          git config user.email "actions@github.com"
-          
-          VERSION_TAG="${{ needs.bumpAndCreatePR.outputs.nextVersionTag }}"
-          if [[ "$VERSION_TAG" =~ ^v([0-9]+)\.[0-9]+\.[0-9]+$ ]]; then
-            MAJOR_TAG="v${BASH_REMATCH[1]}"
-          else
-            echo "${{ env.LOG_PREFIX }} ::error::Invalid tag: $VERSION_TAG"
-            exit 1
-          fi
-          
-          git fetch --tags
-          if [[ "${{ env.ENABLE_MAJOR_TAG }}" == "true" && ! $(git tag | grep -q "^$MAJOR_TAG$") ]]; then
-            git tag -f "$MAJOR_TAG" "$VERSION_TAG" || { echo "${{ env.LOG_PREFIX }} ::error::Failed to create major tag"; exit 1; }
-            git push origin "$MAJOR_TAG" --force || { echo "${{ env.LOG_PREFIX }} ::error::Failed to push major tag"; exit 1; }
-          fi
-          
-          if [[ "${{ env.ENABLE_LATEST_TAG }}" == "true" ]]; then
-            git tag -f latest "$VERSION_TAG" || { echo "${{ env.LOG_PREFIX }} ::error::Failed to create latest tag"; exit 1; }
-            git push origin latest --force || { echo "${{ env.LOG_PREFIX }} ::error::Failed to push latest tag"; exit 1; }
-          fi
-        shell: bash
-
-      - name: Clean Workspace
-        if: always()
-        run: rm -rf $GITHUB_WORKSPACE/*
+          rm -rf $GITHUB_WORKSPACE
+          git push origin "${{ needs.bumpAndCreatePR.outputs.releaseBranch }}" || { echo "${PR_NUMBER} not approved"; exit 1; }
