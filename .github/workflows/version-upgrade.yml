@@ -23,11 +23,12 @@ jobs:
     steps:
       - name: Validate version format
         run: |
+          log() { echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] $1"; }
           if [[ ! "${{ inputs.version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Error: Version must be in format v0.0.0"
+            log "Error: Version must be in format v0.0.0"
             exit 1
           fi
-          echo "Version format validated: ${{ inputs.version }}"
+          log "Version format validated: ${{ inputs.version }}"
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -51,58 +52,65 @@ jobs:
 
       - name: Create version branch
         run: |
+          log() { echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ")] $1"; }
           BRANCH_NAME="version-update-${{ inputs.version }}"
           git checkout -b "$BRANCH_NAME"
+          log "Created and switched to branch: $BRANCH_NAME"
           echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
 
       - name: Update package version
         run: |
+          log() { echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ")] $1"; }
           VERSION="${{ inputs.version }}"
           VERSION_NO_V="${VERSION#v}"
-          echo "Updating version to $VERSION_NO_V"
+          log "Updating version to $VERSION_NO_V"
           npm version "$VERSION_NO_V" --no-git-tag-version
           echo "VERSION_NO_V=$VERSION_NO_V" >> $GITHUB_ENV
 
       - name: Commit version changes
         run: |
+          log() { echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ")] $1"; }
           git add package.json package-lock.json
           if git diff --staged --quiet; then
-            echo "No changes to commit"
+            log "No changes to commit"
           else
             git commit -m "chore: bump version to ${{ inputs.version }}"
-            echo "Changes committed successfully"
+            log "Changes committed successfully"
           fi
 
       - name: Push version branch
         run: |
+          log() { echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ")] $1"; }
           git push origin "$BRANCH_NAME"
-          echo "Branch pushed: $BRANCH_NAME"
+          log "Branch pushed: $BRANCH_NAME"
 
       - name: Create Pull Request
         id: create-pr
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.BOT_TOKEN }}
           script: |
-            const { data: pr } = await github.rest.pulls.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              head: process.env.BRANCH_NAME,
-              base: 'main',
-              title: `chore: release version ${{ inputs.version }}`,
-              body: `## Version Update: ${{ inputs.version }}
-              
-              This PR updates the package version to ${{ inputs.version }}.
-              
-              ### Changes
-              - Updated package.json version to ${{ env.VERSION_NO_V }}
-              - Updated package-lock.json`
-            });
-            
-            core.setOutput('pull-request-number', pr.number);
-            core.setOutput('pull-request-url', pr.html_url);
-            
-            console.log(`Pull request created: #${pr.number}`);
-            console.log(`URL: ${pr.html_url}`);
+            function log(msg) {
+              const now = new Date().toISOString();
+              console.log(`[${now}] ${msg}`);
+            }
+            try {
+              const { data: pr } = await github.rest.pulls.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                head: process.env.BRANCH_NAME,
+                base: 'main',
+                title: `chore: release version ${{ inputs.version }}`,
+                body: `## Version Update: ${{ inputs.version }}\n\nThis PR updates the package version to ${{ inputs.version }}.\n\n### Changes\n- Updated package.json version to ${{ env.VERSION_NO_V }}\n- Updated package-lock.json`
+              });
+              core.setOutput('pull-request-number', pr.number);
+              core.setOutput('pull-request-url', pr.html_url);
+              log(`Pull request created: #${pr.number}`);
+              log(`URL: ${pr.html_url}`);
+            } catch (error) {
+              log(`Failed to create pull request: ${error.message}`);
+              core.setFailed(error.message);
+            }
 
   wait-for-merge:
     needs: version-update
@@ -113,55 +121,58 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            function log(msg) {
+              const now = new Date().toISOString();
+              console.log(`[${now}] ${msg}`);
+            }
             const prNumber = ${{ needs.version-update.outputs.pr-number }};
-            console.log(`Monitoring PR #${prNumber} for merge status`);
-            
+            log(`Monitoring PR #${prNumber} for merge status`);
             let merged = false;
             let attempts = 0;
             const maxAttempts = 120;
-            
+            const delay = ms => new Promise(res => setTimeout(res, ms));
             while (!merged && attempts < maxAttempts) {
-              const { data: pr } = await github.rest.pulls.get({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: prNumber
-              });
-              
-              if (pr.merged) {
-                console.log(`PR #${prNumber} has been merged successfully`);
-                merged = true;
-                break;
-              }
-              
-              if (pr.state === 'closed' && !pr.merged) {
-                console.log(`PR #${prNumber} was closed without merging`);
-                core.setFailed('Pull request was closed without merging');
-                return;
-              }
-              
-              // Check if PR has required approvals
-              const { data: reviews } = await github.rest.pulls.listReviews({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: prNumber
-              });
-              
-              const approvedReviews = reviews.filter(review => review.state === 'APPROVED');
-              if (approvedReviews.length > 0) {
-                console.log(`PR #${prNumber} has ${approvedReviews.length} approval(s)`);
-              }
-              
-              console.log(`Attempt ${attempts + 1}/${maxAttempts}: PR status - ${pr.state}`);
               attempts++;
-              
-              if (attempts < maxAttempts) {
-                await new Promise(resolve => setTimeout(resolve, 60000)); // Wait 1 minute
+              try {
+                const { data: pr } = await github.rest.pulls.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: prNumber
+                });
+                if (pr.merged) {
+                  log(`PR #${prNumber} has been merged successfully`);
+                  merged = true;
+                  break;
+                }
+                if (pr.state === 'closed' && !pr.merged) {
+                  log(`PR #${prNumber} was closed without merging`);
+                  core.setFailed('Pull request was closed without merging');
+                  return;
+                }
+                // Check if PR has required approvals
+                const { data: reviews } = await github.rest.pulls.listReviews({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: prNumber
+                });
+                const approvedReviews = reviews.filter(review => review.state === 'APPROVED');
+                if (approvedReviews.length > 0) {
+                  log(`PR #${prNumber} has been approved. Waiting for merge...`);
+                } else {
+                  log(`PR #${prNumber} not yet approved. Attempt ${attempts}/${maxAttempts}`);
+                }
+              } catch (error) {
+                log(`Error checking PR status: ${error.message}`);
+                if (attempts >= maxAttempts) {
+                  core.setFailed('Max attempts reached while waiting for PR merge/approval');
+                  return;
+                }
               }
+              await delay(10000); // wait 10 seconds between checks
             }
-            
             if (!merged) {
-              console.log('Timeout waiting for PR merge. Manual intervention may be required.');
-              core.setFailed('Timeout waiting for PR to be merged');
+              log('Timeout: PR was not merged within the expected time.');
+              core.setFailed('Timeout: PR was not merged.');
             }
 
   create-tag:
@@ -207,16 +218,16 @@ jobs:
                 tag_name: tagName,
                 name: `Black Duck Security Scan ${tagName}`,
                 body: `## Black Duck Security Scan ${tagName}
-                
+            
                 ### Changes
                 - Version bump to ${tagName}`,
                 draft: true,
                 prerelease: false
               });
-              
+            
               console.log(`Draft release created: ${release.html_url}`);
               console.log(`Release ID: ${release.id}`);
-              
+            
             } catch (error) {
               if (error.status === 422) {
                 console.log(`Release for tag ${tagName} already exists`);
