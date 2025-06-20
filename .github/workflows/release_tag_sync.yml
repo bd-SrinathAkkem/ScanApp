@@ -1,4 +1,4 @@
-name: SyncTags
+name: Sync Tags on Release
 
 on:
   release:
@@ -82,60 +82,7 @@ jobs:
           git tag -a "$MAJOR_TAG" -m "Major version tag for ${{ env.RELEASE_TAG }}"
           git push origin "$MAJOR_TAG"
           echo "Major tag $MAJOR_TAG synchronized successfully"
-
-      - name: Create or update minor version tag
-        run: |
-          MINOR_TAG="v${{ env.MAJOR }}.${{ env.MINOR }}"
-          echo "Processing minor version tag: $MINOR_TAG"
           
-          # Check if minor tag exists
-          if git tag -l | grep -q "^$MINOR_TAG$"; then
-            echo "Minor tag $MINOR_TAG exists, updating to point to ${{ env.RELEASE_TAG }}"
-            git tag -d "$MINOR_TAG"
-            git push origin ":refs/tags/$MINOR_TAG" || true
-          else
-            echo "Creating new minor tag: $MINOR_TAG"
-          fi
-          
-          # Create/recreate the minor tag
-          git tag -a "$MINOR_TAG" -m "Minor version tag for ${{ env.RELEASE_TAG }}"
-          git push origin "$MINOR_TAG"
-          echo "Minor tag $MINOR_TAG synchronized successfully"
-
-      - name: Verify marketplace compatibility
-        run: |
-          echo "=== Marketplace Compatibility Check ==="
-          echo "Release tag: ${{ env.RELEASE_TAG }}"
-          echo "Major tag: v${{ env.MAJOR }}"
-          echo "Minor tag: v${{ env.MAJOR }}.${{ env.MINOR }}"
-          
-          # Check for common marketplace requirements
-          if [[ -f "action.yml" ]] || [[ -f "action.yaml" ]]; then
-            echo "Action metadata file found"
-            
-            # Basic validation of action file
-            if command -v yq &> /dev/null; then
-              echo "Validating action metadata structure"
-              yq eval '.name, .description, .runs' action.y*ml 2>/dev/null || echo "Basic YAML structure appears valid"
-            fi
-          else
-            echo "Warning: No action.yml or action.yaml found"
-          fi
-          
-          if [[ -f "package.json" ]]; then
-            echo "Package.json found - Node.js action detected"
-            
-            # Verify version in package.json matches release
-            if command -v jq &> /dev/null; then
-              PKG_VERSION=$(jq -r '.version' package.json)
-              if [[ "$PKG_VERSION" == "${{ env.VERSION_NO_V }}" ]]; then
-                echo "Package.json version matches release: $PKG_VERSION"
-              else
-                echo "Warning: Package.json version ($PKG_VERSION) does not match release (${{ env.VERSION_NO_V }})"
-              fi
-            fi
-          fi
-
       - name: Update latest tag
         run: |
           LATEST_TAG="latest"
@@ -151,6 +98,40 @@ jobs:
           git tag -a "$LATEST_TAG" -m "Latest release: ${{ env.RELEASE_TAG }}"
           git push origin "$LATEST_TAG"
           echo "Latest tag synchronized successfully"
+
+      - name: Verify marketplace compatibility
+        run: |
+          echo "=== Marketplace Compatibility Check ==="
+          echo "Release tag: ${{ env.RELEASE_TAG }}"
+          echo "Major tag: v${{ env.MAJOR }}"
+          echo "Minor tag: v${{ env.MAJOR }}.${{ env.MINOR }}"
+          
+          # Check for common marketplace requirements
+          if [[ -f "action.yml" ]] || [[ -f "action.yaml" ]]; then
+            echo "Action metadata file found"
+          
+            # Basic validation of action file
+            if command -v yq &> /dev/null; then
+              echo "Validating action metadata structure"
+              yq eval '.name, .description, .runs' action.y*ml 2>/dev/null || echo "Basic YAML structure appears valid"
+            fi
+          else
+            echo "Warning: No action.yml or action.yaml found"
+          fi
+          
+          if [[ -f "package.json" ]]; then
+            echo "Package.json found - Node.js action detected"
+          
+            # Verify version in package.json matches release
+            if command -v jq &> /dev/null; then
+              PKG_VERSION=$(jq -r '.version' package.json)
+              if [[ "$PKG_VERSION" == "${{ env.VERSION_NO_V }}" ]]; then
+                echo "Package.json version matches release: $PKG_VERSION"
+              else
+                echo "Warning: Package.json version ($PKG_VERSION) does not match release (${{ env.VERSION_NO_V }})"
+              fi
+            fi
+          fi
 
       - name: Generate tag summary
         run: |
@@ -179,14 +160,14 @@ jobs:
           if [[ -n "$PRERELEASE_TAGS" ]]; then
             echo "Found pre-release tags:"
             echo "$PRERELEASE_TAGS"
-            
+          
             # Keep only the 5 most recent pre-release tags
             TAGS_TO_DELETE=$(echo "$PRERELEASE_TAGS" | head -n -5)
-            
+          
             if [[ -n "$TAGS_TO_DELETE" ]]; then
               echo "Cleaning up old pre-release tags:"
               echo "$TAGS_TO_DELETE"
-              
+          
               while IFS= read -r tag; do
                 if [[ -n "$tag" ]]; then
                   echo "Deleting tag: $tag"
