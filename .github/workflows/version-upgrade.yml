@@ -51,8 +51,6 @@ jobs:
           echo "${{ env.LOG_PREFIX }} SR1 Next version tag: $VERSION_TAG"
           
           git fetch --tags
-
-          echo "${{ env.LOG_PREFIX }} SR2 Next version tag: $VERSION_TAG"
           
           MATCHING_TAGS=$(git tag | grep -E "^v$MAJOR\.$MINOR\.[0-9]+$" | sort -V)
           echo "${{ env.LOG_PREFIX }} SR2 Next version tag: $MATCHING_TAGS"
