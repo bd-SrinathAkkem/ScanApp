@@ -51,8 +51,13 @@ jobs:
           echo "${{ env.LOG_PREFIX }} SR1 Next version tag: $VERSION_TAG"
           
           git fetch --tags
-          
-          MATCHING_TAGS=$(git tag | grep -E "^v$MAJOR\.$MINOR\.[0-9]+$" | sort -V)
+
+          if [[ -z "$MAJOR" || -z "$MINOR" ]]; then
+            echo "[VersionUpgrade] ::error::MAJOR or MINOR is empty"
+            exit 1
+          fi
+          MATCHING_TAGS=$(git tag | grep -E "^v${MAJOR}\.${MINOR}\.[0-9]+$" | sort -V)
+
           echo "${{ env.LOG_PREFIX }} SR2 Next version tag: $MATCHING_TAGS"
           if [ -z "$MATCHING_TAGS" ]; then
             echo "${{ env.LOG_PREFIX }} SR3 Next version tag: $MATCHING_TAGS"
