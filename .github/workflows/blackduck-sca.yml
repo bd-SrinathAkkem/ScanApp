@@ -22,3 +22,19 @@ jobs:
           blackducksca_reports_sarif_create: true
           include_diagnostics: true
           github_token: ${{ secrets.BOT_TOKEN }}
+  test:
+      runs-on: ubuntu-latest
+      steps:
+        - name: Checkout Source
+          uses: actions/checkout@v3
+        - name: Black Duck Full Scan
+          id: black-duck-security-scan
+          uses: blackduck-inc/black-duck-security-scan@v2.1.1
+          env:
+            DETECT_PROJECT_NAME: ${{ github.event.repository.name }}
+          with:
+            blackducksca_url: ${{ vars.BLACKDUCK_URL }}
+            blackducksca_token: ${{ secrets.BLACKDUCK_TOKEN }}
+            blackducksca_reports_sarif_create: true
+            include_diagnostics: true
+            github_token: ${{ secrets.BOT_TOKEN }}
