@@ -1,277 +1,85 @@
-# Semantic Versioning Pipeline
-
-.semver_base:
-  image: ubuntu:latest
-  before_script:
-    - apt-get update
-    - apt-get install -y git curl jq bash
-    - git config --global user.name "GitLab CI"
-    - git config --global user.email "gitlab-ci@noreply.gitlab.com"
-    - git remote set-url origin https://gitlab-ci-token:${GITLAB_BOT_TOKEN}@gitlab.com/${CI_PROJECT_PATH}.git
-
-.validate_version:
-  extends: .semver_base
-  stage: validate
-  script:
-    - |
-      echo "[INFO] Validating version format: $VERSION"
-      case "$VERSION" in
-        v[0-9]*.[0-9]*.[0-9]*) ;;
-        *)
-          echo "[ERROR] Invalid version format. Expected: v0.0.0, received: $VERSION"
-          exit 1
-          ;;
-      esac
-      
-      VERSION_NO_V="${VERSION#v}"
-      IFS='.'
-      set -- $VERSION_NO_V
-      MAJOR=$1
-      MINOR=$2
-      PATCH=$3
-      
-      echo "[INFO] Version validation successful"
-      echo "[INFO] Full version: $VERSION_NO_V"
-      echo "[INFO] Major: $MAJOR, Minor: $MINOR, Patch: $PATCH"
-      
-      # Export for subsequent jobs
-      echo "VERSION_NO_V=$VERSION_NO_V" >> version.env
-      echo "MAJOR=$MAJOR" >> version.env
-      echo "MINOR=$MINOR" >> version.env
-      echo "PATCH=$PATCH" >> version.env
-  artifacts:
-    reports:
-      dotenv: version.env
-    expire_in: 1 hour
-
-.create_tag:
-  extends: .semver_base
-  stage: tag
-  script:
-    - |
-      echo "[INFO] Fetching latest repository state"
-      git fetch --all --tags
-      
-      TAG_NAME="$VERSION"
-      echo "[INFO] Creating tag: $TAG_NAME"
-      
-      # Check if tag already exists
-      if git tag -l | grep -q "^$TAG_NAME$"; then
-        echo "[WARNING] Tag $TAG_NAME already exists, removing existing tag"
-        git tag -d "$TAG_NAME" 2>/dev/null || true
-        git push origin ":refs/tags/$TAG_NAME" 2>/dev/null || true
-        echo "[INFO] Existing tag removed"
-      fi
-      
-      # Create new tag
-      git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
-      git push origin "$TAG_NAME"
-      
-      echo "[SUCCESS] Tag $TAG_NAME created and pushed successfully"
-      echo "TAG_NAME=$TAG_NAME" >> tag.env
-  artifacts:
-    reports:
-      dotenv: tag.env
-    expire_in: 1 hour
-
-.create_draft_release:
-  extends: .semver_base
-  stage: release
-  script:
-    - |
-      TAG_NAME="$VERSION"
-      PROJECT_ID="$CI_PROJECT_ID"
-      
-      echo "[INFO] Creating draft release for tag: $TAG_NAME"
-      echo "[INFO] Project ID: $PROJECT_ID"
-      
-      # Prepare release description
-      RELEASE_DESCRIPTION="## Release $TAG_NAME\\n\\n### Changes\\n- Version bump to $TAG_NAME\\n\\nThis is a draft release. Please review and publish manually."
-      
-      # Create draft release using GitLab API
-      RELEASE_RESPONSE=$(curl -s --fail-with-body \
-        --request POST \
-        --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-        --header "Content-Type: application/json" \
-        --data '{
-          "name": "Release '"$TAG_NAME"'",
-          "tag_name": "'"$TAG_NAME"'",
-          "description": "'"$RELEASE_DESCRIPTION"'",
-          "released_at": null
-        }' \
-        "https://gitlab.com/api/v4/projects/$PROJECT_ID/releases" || {
-          echo "[ERROR] Failed to create release"
-          echo "[ERROR] Response: $RELEASE_RESPONSE"
-          exit 1
-        })
-      
-      RELEASE_NAME=$(echo "$RELEASE_RESPONSE" | jq -r '.name // empty')
-      
-      if [[ -n "$RELEASE_NAME" ]]; then
-        echo "[SUCCESS] Draft release created: $RELEASE_NAME"
-        echo "[INFO] Release URL: $CI_PROJECT_URL/-/releases/$TAG_NAME"
-        echo "[INFO] Release is in draft state - manual publication required"
-      else
-        echo "[ERROR] Failed to parse release response"
-        echo "[ERROR] Response: $RELEASE_RESPONSE"
-        exit 1
-      fi
-
-.sync_version_tags:
-  extends: .semver_base
-  stage: sync
-  script:
-    - |
-      RELEASE_TAG="$CI_COMMIT_TAG"
-      echo "[INFO] Synchronizing version tags for release: $RELEASE_TAG"
-      
-      # Validate release tag format
-      if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        echo "[ERROR] Invalid release tag format: $RELEASE_TAG"
-        exit 1
-      fi
-      
-      # Extract version components
-      VERSION_NO_V="${RELEASE_TAG#v}"
-      IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION_NO_V"
-      
-      echo "[INFO] Processing version components:"
-      echo "[INFO] Major: $MAJOR, Minor: $MINOR, Patch: $PATCH"
-      
-      # Fetch all existing tags
-      git fetch --tags
-      echo "[INFO] Current repository tags:"
-      git tag -l | sort -V | head -10
-      
-      # Create/update major version tag
-      MAJOR_TAG="v$MAJOR"
-      echo "[INFO] Processing major version tag: $MAJOR_TAG"
-      
-      if git tag -l | grep -q "^$MAJOR_TAG$"; then
-        echo "[INFO] Updating existing major tag: $MAJOR_TAG"
-        git tag -d "$MAJOR_TAG"
-        git push origin ":refs/tags/$MAJOR_TAG" || true
-      else
-        echo "[INFO] Creating new major tag: $MAJOR_TAG"
-      fi
-      
-      git tag -a "$MAJOR_TAG" -m "Major version tag for $RELEASE_TAG"
-      git push origin "$MAJOR_TAG"
-      echo "[SUCCESS] Major tag synchronized: $MAJOR_TAG"
-      
-      # Update latest tag
-      LATEST_TAG="latest"
-      echo "[INFO] Updating latest tag"
-      
-      if git tag -l | grep -q "^$LATEST_TAG$"; then
-        git tag -d "$LATEST_TAG"
-        git push origin ":refs/tags/$LATEST_TAG" || true
-      fi
-      
-      git tag -a "$LATEST_TAG" -m "Latest release: $RELEASE_TAG"
-      git push origin "$LATEST_TAG"
-      echo "[SUCCESS] Latest tag updated: $LATEST_TAG"
-      
-      echo "[SUCCESS] Tag synchronization completed"
-      echo "[INFO] Synchronized tags: $MAJOR_TAG, $MINOR_TAG, $LATEST_TAG"
-
-.cleanup_old_tags:
-  extends: .semver_base
-  stage: cleanup
-  script:
-    - |
-      echo "[INFO] Starting cleanup of old pre-release tags"
-      git fetch --tags
-      
-      # Find pre-release tags (alpha, beta, rc)
-      PRERELEASE_TAGS=$(git tag -l | grep -E '\-(alpha|beta|rc)' | sort -V || true)
-      
-      if [[ -z "$PRERELEASE_TAGS" ]]; then
-        echo "[INFO] No pre-release tags found for cleanup"
-        exit 0
-      fi
-      
-      echo "[INFO] Found pre-release tags:"
-      echo "$PRERELEASE_TAGS"
-      
-      # Count total pre-release tags
-      TAG_COUNT=$(echo "$PRERELEASE_TAGS" | wc -l)
-      KEEP_COUNT=5
-      
-      if [[ $TAG_COUNT -le $KEEP_COUNT ]]; then
-        echo "[INFO] Tag count ($TAG_COUNT) is within retention limit ($KEEP_COUNT)"
-        exit 0
-      fi
-      
-      # Calculate how many to delete
-      DELETE_COUNT=$((TAG_COUNT - KEEP_COUNT))
-      echo "[INFO] Keeping $KEEP_COUNT most recent tags, deleting $DELETE_COUNT old tags"
-      
-      # Get tags to delete (oldest ones)
-      TAGS_TO_DELETE=$(echo "$PRERELEASE_TAGS" | head -n $DELETE_COUNT)
-      
-      echo "[INFO] Tags scheduled for deletion:"
-      echo "$TAGS_TO_DELETE"
-      
-      # Delete old tags
-      DELETED_COUNT=0
-      while IFS= read -r tag; do
-        if [[ -n "$tag" ]]; then
-          echo "[INFO] Deleting tag: $tag"
-          if git push origin ":refs/tags/$tag" 2>/dev/null; then
-            DELETED_COUNT=$((DELETED_COUNT + 1))
-            echo "[SUCCESS] Deleted tag: $tag"
-          else
-            echo "[WARNING] Failed to delete tag: $tag"
-          fi
-        fi
-      done <<< "$TAGS_TO_DELETE"
-      
-      echo "[SUCCESS] Cleanup completed. Deleted $DELETED_COUNT pre-release tags"
-  allow_failure: true
-
-# Workflow templates for different triggers
-
-# Manual version creation workflow
-version_create_workflow:
-  stage: validate
-  extends: .validate_version
-  needs: []
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "web" && $VERSION'
-    - if: '$CI_PIPELINE_SOURCE == "api" && $VERSION'
-    - if: '$CI_PIPELINE_SOURCE == "trigger" && $VERSION'
-
-tag_create_workflow:
-  stage: tag
-  extends: .create_tag
-  needs: ["version_create_workflow"]
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "web" && $VERSION'
-    - if: '$CI_PIPELINE_SOURCE == "api" && $VERSION'
-    - if: '$CI_PIPELINE_SOURCE == "trigger" && $VERSION'
-
-draft_release_workflow:
-  stage: release
-  extends: .create_draft_release
-  needs: ["tag_create_workflow"]
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "web" && $VERSION'
-    - if: '$CI_PIPELINE_SOURCE == "api" && $VERSION'
-    - if: '$CI_PIPELINE_SOURCE == "trigger" && $VERSION'
-
-# Release publication workflow (triggered by GitLab release events)
-sync_tags_workflow:
-  stage: sync
-  extends: .sync_version_tags
-  needs: []
-  rules:
-    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/'
-
-cleanup_tags_workflow:
-  stage: cleanup
-  extends: .cleanup_old_tags
-  needs: []
-  rules:
-    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/'
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+#!/usr/bin/env bash
+# Check workflow semver tags
+# ---------------------------------------------------------------------------
+ 
+set -euo pipefail
+ 
+WORKFLOW_DIR="/Users/reddyakkem/black-duck-projects/blackduck-inc/black-duck-security-scan/.github/workflows"
+[[ -d "$WORKFLOW_DIR" ]] || { echo "❌  $WORKFLOW_DIR not found"; exit 1; }
+ 
+# Pick grep/sort implementations ------------------------------------------------
+GREP_BIN="grep"
+SORT_BIN="sort"
+command -v ggrep >/dev/null 2>&1 && GREP_BIN="ggrep"
+command -v gsort >/dev/null 2>&1 && SORT_BIN="gsort"
+ 
+# Helper: compare versions A < B? (returns 0 if A is older than B)
+ver_lt() {
+  # First try gsort -V if present
+  if "$SORT_BIN" -V </dev/null &>/dev/null; then
+    [[ "$("$SORT_BIN" -V <(printf "%s\n%s" "$1" "$2") | head -n1)" != "$2" ]]
+    return
+  fi
+  # Fallback: Python natural-version compare (handles 1.2.3-beta etc.)
+  /usr/bin/python3 - "$1" "$2" <<'PY'
+import re, sys, itertools, functools
+def parts(v): return [int(x) if x.isdigit() else x
+                      for x in re.split(r'([0-9]+)', v.strip("v")) if x!='']
+def cmp(a,b):
+    for x,y in itertools.zip_longest(parts(a), parts(b), fillvalue=0):
+        if x==y: continue
+        # numeric vs string: strings > numbers so treat as newer
+        if isinstance(x,int) and isinstance(y,str): return -1
+        if isinstance(x,str) and isinstance(y,int): return 1
+        return (x>y)-(x<y)
+    return 0
+sys.exit(0 if cmp(sys.argv[1], sys.argv[2])<0 else 1)
+PY
+}
+ 
+echo "🔍  Scanning workflow files for pinned actions…"
+ 
+# 1. Extract all "owner/repo@tag" references ------------------------------------
+uses_lines=()
+while IFS= read -r line; do
+  uses_lines+=("$line")
+done < <(
+  "$GREP_BIN" -Erho \
+    'uses:[[:space:]]*[^@[:space:]]+@[^[:space:]]+' \
+    "$WORKFLOW_DIR" --include="*.y*ml" |
+  sed -E 's/uses:[[:space:]]*//' | sort -u
+)
+ 
+(( ${#uses_lines[@]} == 0 )) && { echo "No pinned actions found."; exit 0; }
+ 
+# 2. Iterate & compare ----------------------------------------------------------
+for entry in "${uses_lines[@]}"; do
+  action_path="${entry%@*}"      # owner/repo
+  current_tag="${entry##*@}"     # v1.2.3 etc.
+ 
+  # GitHub API: latest *release*, else latest tag
+  latest_tag=$(curl -sSfL \
+        -H "Accept: application/vnd.github+json" \
+"https://api.github.com/repos/$action_path/releases/latest" 2>/dev/null |
+        jq -r '.tag_name // empty')
+ 
+  if [[ -z "$latest_tag" || "$latest_tag" == "null" ]]; then
+    latest_tag=$(curl -sSfL \
+          -H "Accept: application/vnd.github+json" \
+"https://api.github.com/repos/$action_path/tags?per_page=1" |
+          jq -r '.[0].name // empty')
+  fi
+ 
+  if [[ -z "$latest_tag" ]]; then
+    printf "⚠️  %-35s  (could not determine latest tag)\n" "$action_path"
+    continue
+  fi
+ 
+  if ver_lt "$current_tag" "$latest_tag"; then
+    printf "➡️  %-35s  current %-12s  latest %-12s  UPDATE\n" \
+           "$action_path" "$current_tag" "$latest_tag"
+    echo "   suggested line → uses: $action_path@$latest_tag"
+  else
+    printf "✅ %-35s  current %-12s  up-to-date\n" "$action_path" "$current_tag"
+  fi
+done
