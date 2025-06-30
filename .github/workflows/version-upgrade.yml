@@ -14,6 +14,19 @@ permissions:
   actions: read
 
 jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      org: blackduck-inc
+    steps:
+      - run: echo "org=blackduck-inc" >> $GITHUB_OUTPUT
+ 
+  precheck:
+    needs: setup
+    uses: ./.github/workflows/precheck.yml
+    with:
+      org: ${{ needs.setup.outputs.org }}
+      
   version-update:
     runs-on: ubuntu-latest
     outputs:
