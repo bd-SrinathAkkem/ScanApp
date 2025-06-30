@@ -3,12 +3,26 @@ name: Sync Tags on Release
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: write
   actions: read
 
 jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      org: blackduck-inc
+    steps:
+      - run: echo "org=blackduck-inc" >> $GITHUB_OUTPUT
+ 
+  precheck:
+    needs: setup
+    uses: ./.github/workflows/precheck.yml
+    with:
+      org: ${{ needs.setup.outputs.org }}
+
   sync-tags:
     runs-on: ubuntu-latest
     
