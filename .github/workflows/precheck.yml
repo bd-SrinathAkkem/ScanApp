@@ -1,0 +1,28 @@
+name: Access Precheck
+ 
+on:
+  workflow_call:
+    inputs:
+      org:
+        required: true
+        type: string
+    outputs:
+      authorized:
+        value: ${{ jobs.check.outputs.authorized }}
+ 
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      authorized: ${{ steps.check.outputs.authorized }}
+    steps:
+      - id: check
+        env:
+          ORG: ${{ inputs.org }}
+          ACTOR: ${{ github.actor }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer $TOKEN" \
+            https://api.github.com/orgs/$ORG/members/$ACTOR)
+          echo "authorized=$([ "$CODE" = 204 ] && echo true || echo false)" >> $GITHUB_OUTPUT
