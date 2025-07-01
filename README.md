@@ -1,54 +1,61 @@
-# React + TypeScript + Vite
+Issue:
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+ @Martin Jones ,has reported when not specifying environmental variable for product URL it provides the follow exception 
 
-Currently, two official plugins are available:
+Error: Workflow failed! Requires at least one scan type:  (polaris_server_url,coverity_url,blackducksca_url,srm_url)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+It was noted that this is misleading, A “scan type” is NOT a URL, therefore it is a bug and the message needs to change.
 
-## Expanding the ESLint configuration
+Analysis:
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+I was able to reproduce with the following;
 
-```js
-export default tseslint.config({
-  extends: [
-    // Remove ...tseslint.configs.recommended and replace with this
-    ...tseslint.configs.recommendedTypeChecked,
-    // Alternatively, use this for stricter rules
-    ...tseslint.configs.strictTypeChecked,
-    // Optionally, add this for stylistic rules
-    ...tseslint.configs.stylisticTypeChecked,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
-```
+name: CI-BlackDuck-SCA-Basic
+on:
+  push:
+    branches: [ main, master, develop, stage, release ]
+  pull_request:
+    branches: [ main, master, develop, stage, release ]
+  workflow_dispatch:
+    
+jobs:
+  build:
+    runs-on: [ X64 ]
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v3
+      - name: Black Duck Scan
+        uses: blackduck-inc/black-duck-security-scan@v2.1.1
+        
+        ### Configure DETECT environment variables
+        env:
+          DETECT_PROJECT_NAME: ${{ github.event.repository.name }}
+          DETECT_PROJECT_VERSION_NAME: main
+          BLACKDUCK_TRUST_CERT: true
+          
+        with:
+          ### SCANNING: Required fields
+          ##blackducksca_url: ${{ vars.BLACKDUCKSCA_URL }}
+          blackducksca_token: ${{ secrets.BLACKDUCKSCA_TOKEN }}
+          #detect_args: '--detect.tools=SIGNATURE_SCAN'
+         
+          #### SCANNING: Optional fields
+          # blackducksca_scan_failure_severities: 'BLOCKER,CRITICAL'
+          
+          ### FIX PULL REQUEST CREATION: Uncomment below to enable
+          # blackducksca_fixpr_enabled: true
+          github_token: ${{ secrets.GITHUB_TOKEN }} # Required when Fix PRs is enabled
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
 
-export default tseslint.config({
-  plugins: {
-    // Add the react-x and react-dom plugins
-    'react-x': reactX,
-    'react-dom': reactDom,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended typescript rules
-    ...reactX.configs['recommended-typescript'].rules,
-    ...reactDom.configs.recommended.rules,
-  },
-})
-```
+result:
+
+
+
+
+Expectation:
+It was noted the expectation is the error 
+
+“Error: Workflow failed! Requires at least one scan type:”
+
+Instead of scan type it should be changed to specify that it requires a URL
