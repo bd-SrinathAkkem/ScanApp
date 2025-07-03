@@ -1,131 +1,36 @@
-Use case 1: support multi version for a SCM
-Use case 2 : support multi version for a SCM
-Use case 3: Automatic code generation for integrations
-Overview
-AI Tool Details
-Planned Testing
-Results and Outcomes
-Use case 1: support multi version for a SCM
-Find differences in diff version of on Prem SCM and Cloud.
-
-Check cloud version release notes.
-
-compare latest cloud version and a specific enterprise  server version.
-
-Check release notes for enterprise server version.
-
-compare 2 enterprise server version.
-
-Check against the REST APIs that we use in code, runner, environment variable or any breaking change that is mentioned in release notes.
-
-Generate schema diff.
-
-Based on Schema Diff, update the code and create automatic pull request for the code repo.
-
-Use case 2 : support multi version for a SCM
-Create a chatbot for Documentation to help with customer queries related to our integrations documented feature, add SCM public doc links
-
-Generate workflow file based on user requested feature.
-
-Use case 3: Automatic code generation for integrations
-We can ask agent to add a new feature to any of our integrations repo it should understand the context and make changes and create a automatic pull request.
-
-We can use it for feature parity, for each integration.
-
-Try this to see if we can create new integration using it.
-
-
-
-
-
-
-Overview
-Brief project description
-
-We have 5 integrations products one for each SCM platform(GitHub, Gitlab, Jenkins, bitbucket, Azure).  Which will eventually grow in future.
-
-The underlining functionality is same but code base and tech stack is different created based on platform.
-
-In order to add any new feature, we have to make code changes in each of them. 
-
-If there is any update or contract change on SCM side like Github Gitlab etc. we have to manually update our code.
-
-We want to update integrations code bases base based on these contexts.
-
-I have already tried with copilot and clause sonnet 3.5 to add new feature but it’s unable to fully understand the context. Therefore unable to add codes in all relevant files.
-
-AI Tool Details
-Primary AI tool: Claude Code
-
-Model version: (please stick to Sonnet 4 unless discussing with Drew)
-
-Were any other AI tools already in use for this project before starting this analysis?
-
-Planned Testing
-What specific tasks/scenarios you plan to test
-
-It should be able to understand at the context and code against any new any new feature in the integrations product code bases. 
-
-It would be able to connect to GitHub through MCP and create automatic pull request for the change.
-
-Success criteria or what you're measuring
-
-We would like to analyse how it can help us automatically generate code for each integrations without manual intervention. 
-
-How it’s reducing our Go to Market timelines for adding new feature and in future use case creating new integrations.
-
-Testing approach/methodology
-
-Unit test
-
-Integration test
-
-Results and Outcomes
-What actually happened
-
-Did it help? How?
-
-Specific examples or metrics
-
-Any unexpected findings
-
- 
-
- 
-
- 
-
-Team capability
-
-Developer
-
-Idea/Area
-
- 
-
-Chatbot for documentation guide. 
-
-generating workflows
-
- 
-
-Customer
-
-ai agent for end to end code generation in context of a feature.
-
-if a feature is added in Action, it can be used for other 4 integrations as well.
-
-Internal- Dev productivity
-
-
-code quality on the PR
-
-generate test cases based on Jira description or TA page
-
-Internal- Dev productivity
-
-Multiversion SCM diff checker
-
-Internal- Dev productivity
-
- 
+- [ ] Bugs
+- [ ] ——
+- [x] [Shami] - searching in the table of 'specific repos' is a bit inconsistent.  For the initial search you have to press 'enter' to search...but then adding more text takes a few seconds of spinning to search with each key press.  You should stay with using 'enter' to search, since it is not instant results.
+    - [ ] [SR-Response] - added a new variable, and altered some logic to, so when hit enter then only search api is called.
+- [x] [Grant] - Edit and save yaml buttons are not very clear in the UI on my screen so we can those bigger more obvious that
+    - [ ] [SR-Response] - enlarged some size for the edit
+- [x] [Dheeraj] - Make secrets info for platform on Step 2 text very bold and evident (only pre-reqs for our scans to work), the link there can go to https://docs.github.com/en/actions/how-tos/security-for-github-actions/security-guides/using-secrets-in-github-actions saying Add secrets and variables using these instructions - Remember, for personal accounts, secrets should be added at each repo level. Only github orgs can have common shared secrets across all repos. May be add that note (or possibly the link above should suffice)
+    - [ ] [SR-Response] - updated ui with the info message and style and added a note
+- [x] [Shami] -  I got a time-out dialog that said to 'log out' or 'stay connected'.  I clicked 'log out' and nothing happened.  Should it not take me to the login screen again?
+    - [ ] [SR-Response] - Handle session - 8 hours - refresh - force logout after 8 hours if logged in. - added condition (session related login/extend/logout needs some modification)
+- [x] [Shami] - there is a 'refresh' text that happens once in a while and pushes the whole page down temporarily.  There is no 'refresh' text needed...just update the progress bar when something changes and don't bother telling the user that it is refreshing.  It just looks like a bug and provides no value because they are not waiting long...and if you just refreshed automatically, that is all the user wants/needs.
+    - [ ] [SR-Response] - updated ui to auto-refresh without any other effects.
+- [x] [Grant] - telling the user explicitly that the page auto-refreshed 5 secs ago or something - [Shami] -  auto-refresh...but currently it shows a refresh text/icon that is basically not visible but just makes the page flicker/move around regularly.  So we need to make that work better
+        - [ ] [SR-Response] - Flickering effect - updated ui to auto-refresh without any other effects.
+- [x] [Shami] - typing in the exact string of my repo did not match it...so I think your searching is not working properly for repo names
+    - [ ] [SR-Response] - Current implementation fetching and populating backend data, need to check the exact issue.
+- [x] [Shami] - Can we format the 'invalid YAML' error msg better?  The tooltip does a good job of it, but the error msg puts a multi-line message into a single line, which is not great to read.   Or can we not show the 'line numbers and text' when showing the invalid YAML error?  (since that is just repeating what the file already shows?)
+    - [ ] [SR-Response] - Fixed error message and made it to show in multi line.
+- [x] [Shami] - Also, we had 2 links here in the mockups...was it missed intentionally?  or still coming? (Github plugin [removed from the central-ui] and view documentation)
+    - [ ] [SR-Response] - Need to add ? For now it is hidden
+- [x] [Shami] - the table gets to small vertically when it is loading search results...the "loading repositories" text is hidden mostly
+    - [ ] [SR-Response] - Given fixed px - src/pages/BlackDuckRepoGeneric/components/RepositoryTable.tsx - line 222
+- [x] [Shami] - The numbers circles here seem smaller than our mockups.  Is this something we just created or can we make these a bit bigger to match the mockups more?  (I'm hoping we are using a nice reusable component for that with David F's team.)
+    - [ ] [SR-Response] - Updated the px for steps.
+- [x] [Shami] - under the table 'Showing 1 out of 1 rows' adds '(filtered)' text the second you type anything in the search box, but until you press 'enter' it is not actually filtered at all.  So that text should be only updated when the table is updated...not just typing in the search box
+    - [ ] [SR-Response] - Added Condition -> isShowingFilteredResults
+- [x] [Shami] - Polaris scan options have no default set...it should be 'SAST' at least...but maybe both SAST/SCA both selected by default?  (nothing selected seems wrong)
+    - [ ] [SR-Response] - As per discussion, kept both unchecked to match the actions documentation.
+- [x] [Dheeraj] - All hyperlinks should open in new tab, not in same tab.
+    - [ ] [SR-Response] - Updated code to open in new tab using <a></a> but React is SPA, opening in new tab might make it Multipage.
+- [x] [Dheeraj] - Remove login error message on landing page (this is only on dev instance, not an issue at all)
+    - [ ] [SR-Response] - Refactored code to handle the issues efficiently 
+- [x] [Dheeraj] - Reduce (if possible remove, reducing spacing in the grid) all scrolls on Step 1 (Make paging's next and previous always visible)
+    - [ ] [SR-Response] - Updated the screen with overflow-hidden and made pagination ui fixed(shows all the time when specific option selected)
+- [x] [SR] - Make table header sticky and check scroll fix
+    - [ ] [SR-Response] - Made changes, previously had two scrolls which caused issue, now fixed.
